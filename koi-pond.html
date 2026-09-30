@@ -327,6 +327,58 @@ function makeCausticTexture() {
   TEX.causticsMean = 0.35; // value/mean normalisation baked above -> mean of stored value
 }
 
+// Granite: mineral grains (biotite / feldspar / quartz), weathering tone, hairline cracks and pits.
+function makeRockTextures() {
+  const N = 512;
+  const col = new Uint8Array(N * N * 4), hf = new Float32Array(N * N), crackA = new Uint8Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const g = voronoiTile(u, v, 84, 201, 0.95);
+    const m = hash2i(g.id, 2, 202);
+    let c = m < 0.12 ? [0.045, 0.045, 0.05] : m < 0.46 ? [0.6, 0.585, 0.56] : m < 0.56 ? [0.55, 0.46, 0.42] : [0.34, 0.34, 0.355];
+    const grainEdge = smoothstep(0.0, 0.25, g.f2 - g.f1);
+    const tone = fbm2(u * 4, v * 4, 4, 203, 4) * 0.5 + 0.5;
+    const stain = smoothstep(0.55, 0.8, fbm2(u * 2 + 7, v * 2, 3, 204, 2) * 0.5 + 0.5);
+    const avg = [0.42, 0.41, 0.4];
+    c = c.map((cv, k) => lerp(cv, avg[k], 0.42) * (0.7 + 0.42 * tone) * (1 - 0.25 * stain) * (0.9 + 0.1 * grainEdge));
+    // hairline cracks (only some Voronoi borders are open)
+    const wu = u + fbm2(u * 8, v * 8, 3, 206, 8) * 0.025, wv = v + fbm2(u * 8 + 3, v * 8, 3, 207, 8) * 0.025;
+    const cw = voronoiTile(wu, wv, 4, 205, 0.9);
+    const open = hash2i(cw.id, 9, 209) > 0.45 ? 1 : 0;
+    const cr = smoothstep(0.03, 0.0, cw.f2 - cw.f1) * open;
+    // pits
+    const pw = voronoiTile(u, v, 30, 210, 0.9);
+    const pit = hash2i(pw.id, 1, 211) > 0.9 ? smoothstep(0.16, 0.05, pw.f1) * 0.7 : 0;
+    const i = (y * N + x) * 4;
+    for (let k = 0; k < 3; k++) col[i + k] = clamp(Math.pow(c[k] * (1 - 0.6 * cr) * (1 - 0.45 * pit), 1 / 2.2), 0, 1) * 255;
+    col[i + 3] = (1 - 0.6 * cr - 0.5 * pit) * 255;
+    hf[y * N + x] = tone * 0.9 + (m < 0.12 ? -0.05 : 0.03) + grainEdge * 0.05 - cr * 0.9 - pit * 0.7;
+    crackA[y * N + x] = cr * 255;
+  }
+  TEX.rock = dataTex(col, N, N, { srgb: true });
+  TEX.rockN = dataTex(heightToNormal(hf, N, N, 9, crackA), N, N);
+}
+// Wood grain (for the bridge, pavilion, pier): rings and rays, tileable along the grain.
+function makeWoodTextures() {
+  const N = 256;
+  const col = new Uint8Array(N * N * 4), hf = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const warp = fbm2(u * 3, v * 1, 3, 301, 3) * 0.6;
+    const ring = fract((u * 9 + warp) * 1.0);
+    const late = smoothstep(0.55, 0.9, ring) * (1 - smoothstep(0.9, 1.0, ring));
+    const fiber = fbm2(u * 64, v * 4, 2, 302, 64) * 0.5 + 0.5;
+    const knot = 0;
+    const base = [0.36, 0.25, 0.16], dark = [0.2, 0.13, 0.08];
+    const i = (y * N + x) * 4;
+    for (let k = 0; k < 3; k++) col[i + k] = clamp(Math.pow(lerp(base[k], dark[k], late * 0.8 + knot) * (0.85 + 0.25 * fiber), 1 / 2.2), 0, 1) * 255;
+    col[i + 3] = 255;
+    hf[y * N + x] = -late * 0.5 + fiber * 0.35;
+  }
+  TEX.wood = dataTex(col, N, N, { srgb: true });
+  TEX.woodN = dataTex(heightToNormal(hf, N, N, 3), N, N);
+}
+
 /* =====================================================================================
    3. GEOMETRY HELPERS
    ===================================================================================== */
@@ -436,7 +488,7 @@ function latheGeom(profile, segs = 24, modFn = null) {
   }
   for (let i = 0; i < n - 1; i++) for (let j = 0; j < segs; j++) {
     const a = i * (segs + 1) + j, b = a + segs + 1;
-    idx.push(a, a + 1, b, b, a + 1, b + 1);
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -446,6 +498,30 @@ function latheGeom(profile, segs = 24, modFn = null) {
   return g;
 }
 function setLayer(obj, layer) { obj.traverse((o) => { o.layers.set(layer); }); return obj; }
+// Weld coincident vertices (position only) so computeVertexNormals() gives smooth normals.
+function weld(g, tol = 1e-4) {
+  const pos = g.attributes.position;
+  const map = new Map(), np = [], remap = new Int32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const key = Math.round(pos.getX(i) / tol) + ',' + Math.round(pos.getY(i) / tol) + ',' + Math.round(pos.getZ(i) / tol);
+    let j = map.get(key);
+    if (j === undefined) { j = np.length / 3; map.set(key, j); np.push(pos.getX(i), pos.getY(i), pos.getZ(i)); }
+    remap[i] = j;
+  }
+  const src = g.index ? g.index.array : Array.from({ length: pos.count }, (_, i) => i);
+  const idx = [];
+  for (let t = 0; t < src.length; t += 3) {
+    const a = remap[src[t]], b = remap[src[t + 1]], c = remap[src[t + 2]];
+    if (a !== b && b !== c && a !== c) idx.push(a, b, c);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(np, 3));
+  out.setIndex(idx);
+  return out;
+}
+const smin = (a, b, k) => { const h = clamp(0.5 + 0.5 * (b - a) / k, 0, 1); return lerp(b, a, h) - k * h * (1 - h); };
+const smax = (a, b, k) => -smin(-a, -b, k);
+function flatGeom(g) { const n = g.index ? g.toNonIndexed() : g; n.computeVertexNormals(); return keepAttrs(n, ['position', 'normal']); }
 
 /* =====================================================================================
    4. RENDERER / SKY / SUN / ENVIRONMENT
@@ -1017,7 +1093,7 @@ function patchMaterial(mat, opts = {}) {
 	#pragma unroll_loop_end`);
     lfb = lfb.slice(0, dirIdx) + dirBlock + rest;
     fs = fs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_FRAG_PARS + (opts.float ? 'varying vec3 vFloatN;\n' : '') + GLSL_MATERIAL_PARS + (opts.fragPars || ''));
-    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
+    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
     fs = fs.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + GLSL_ROUGH + (opts.roughness || ''));
     fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GLSL_NORMAL + (opts.normal || ''));
     fs = fs.replace('#include <lights_fragment_begin>', GLSL_UNDERWATER_PREP + (opts.preLights || '') + lfb);
@@ -1061,7 +1137,17 @@ uniform sampler2D tPebbleN;
 uniform sampler2D tMoss;
 uniform sampler2D tMossN;
 #endif
+#ifdef TRIPLANAR
+uniform sampler2D tRock;
+uniform sampler2D tRockN;
+uniform sampler2D tMossT;
+uniform float uTriScale;
+uniform float uMossAmt;
+uniform float uLichen;
+#endif
 float uwSelfId = -1.0;
+float matAO = 1.0;
+float triMoss = 0.0;
 float wxWet = 0.0, wxPuddle = 0.0, wxSnow = 0.0;
 vec3 gNrmW = vec3(0.0, 1.0, 0.0);
 `;
@@ -1078,6 +1164,12 @@ gNrmW = normalize(vWNrm);
   vec3 pb = texture2D(tPebble, gp * 1.3).rgb;
   vec3 pb2 = texture2D(tPebble, gp * 0.57 + vec2(0.31, 0.77)).rgb;
   vec3 pebC = mix(pb, pb2, 0.3 + 0.3 * n1);
+  vec3 an = abs(gNrmW);
+  float steep = smoothstep(0.35, 0.7, 1.0 - an.y);
+  if (steep > 0.0) {
+    vec2 sideUV = (an.x > an.z ? vWPos.zy : vWPos.xy) * 1.3;
+    pebC = mix(pebC, texture2D(tPebble, sideUV).rgb, steep);
+  }
   float deep = smoothstep(-0.2, -0.9, y);
   pebC = mix(pebC, pebC * vec3(0.62, 0.66, 0.46) + vec3(0.006, 0.01, 0.002), deep * (0.45 + 0.4 * n1));
   vec3 ms = mix(texture2D(tMoss, gp * 0.61).rgb, texture2D(tMoss, gp * 0.23 + vec2(0.4, 0.1)).rgb, 0.45);
@@ -1089,9 +1181,47 @@ gNrmW = normalize(vWNrm);
   float shore = smoothstep(0.42 + 0.25 * n2, 0.04, sdW) * smoothstep(0.3, 0.1, y);
   vec3 shoreC = mix(soilC * 0.62, pebC * 0.75, 0.55);
   float underM = smoothstep(0.035, -0.06, y);
+  vec2 muv = simUV(gp);
+  float beach = (muv.x > 0.0 && muv.y > 0.0 && muv.x < 1.0 && muv.y < 1.0) ? texture2D(tMask, muv).a : 0.0;
+  underM = max(underM, smoothstep(0.35, 0.6, beach + (n2 - 0.5) * 0.25) * smoothstep(0.22, 0.1, y));
   vec3 col = mix(landC, shoreC, shore);
-  col = mix(col, pebC, underM);
+  col = mix(col, mix(pebC, pebC * 1.25 + 0.02, beach * step(0.0, y)), underM);
   diffuseColor.rgb = col;
+}
+#endif
+`;
+const GLSL_TRI_ALBEDO = /* glsl */`
+#ifdef TRIPLANAR
+{
+  vec3 bw = pow(abs(gNrmW), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+  vec3 p = vWPos * uTriScale;
+  vec4 rc = texture2D(tRock, p.zy) * bw.x + texture2D(tRock, p.xz + 0.37) * bw.y + texture2D(tRock, p.xy + 0.71) * bw.z;
+  vec3 col = rc.rgb * diffuseColor.rgb;
+  float y = vWPos.y - uWaterY;
+  float up = gNrmW.y;
+  float n1 = fbmz(vWPos.xz * 2.3 + vWPos.y * 1.7);
+  float n2 = fbmz(vWPos.xz * 7.3 - vWPos.y * 3.1 + 4.0);
+  float n3 = fbmz(vWPos.zx * 1.1 + vWPos.y * 0.7 + 9.0);
+  col *= 0.82 + 0.36 * n3;
+  // lichen rosettes (pale sage) and orange Xanthoria spots, above the splash zone
+  float dryZone = smoothstep(0.08, 0.3, y);
+  float nl = fbmz(vWPos.xz * 9.0 + vWPos.y * 6.0 + 2.0);
+  float lichM = smoothstep(0.66, 0.74, nl * 0.75 + n1 * 0.35) * smoothstep(-0.4, 0.3, up) * dryZone * uLichen;
+  vec3 lichC = mix(vec3(0.27, 0.3, 0.23), vec3(0.4, 0.41, 0.33), n2);
+  col = mix(col, lichC, lichM * 0.7);
+  float orange = smoothstep(0.8, 0.87, fbmz(vWPos.xz * 13.0 + vWPos.y * 5.0 + 5.0)) * smoothstep(0.0, 0.5, up) * dryZone * uLichen;
+  col = mix(col, vec3(0.52, 0.32, 0.08), orange * 0.75);
+  // moss cushions on top faces
+  triMoss = smoothstep(0.42, 0.82, up + (n1 - 0.5) * 0.7) * dryZone * uMossAmt;
+  vec3 mossC = texture2D(tMossT, vWPos.xz * 0.9).rgb * (0.8 + 0.4 * n2);
+  col = mix(col, mossC, triMoss);
+  // splash zone (dark wet band) and algae film below the waterline
+  float wetBand = smoothstep(0.12, 0.0, y) * step(0.0, y);
+  col *= 1.0 - 0.5 * wetBand;
+  float alg = smoothstep(0.0, -0.06, y);
+  col = mix(col, col * vec3(0.5, 0.56, 0.33) + vec3(0.008, 0.012, 0.003), alg * (0.6 + 0.35 * n1));
+  diffuseColor.rgb = col;
+  matAO = mix(1.0, rc.a, 0.85);
 }
 #endif
 `;
@@ -1119,21 +1249,54 @@ const GLSL_ROUGH = /* glsl */`
   roughnessFactor = mix(0.92, 0.42, smoothstep(0.12, -0.02, y));
 }
 #endif
+#ifdef TRIPLANAR
+{
+  float y = vWPos.y - uWaterY;
+  roughnessFactor = mix(roughnessFactor, 0.97, triMoss);
+  roughnessFactor = mix(roughnessFactor, 0.45, smoothstep(0.12, 0.0, y));
+}
+#endif
 roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.45, wxWet);
 roughnessFactor = mix(roughnessFactor, 0.04, wxPuddle);
 roughnessFactor = mix(roughnessFactor, 0.72, wxSnow);
 `;
 const GLSL_NORMAL = /* glsl */`
+#ifdef TRIPLANAR
+{
+  vec3 wn = gNrmW;
+  vec3 bw = pow(abs(wn), vec3(4.0)); bw /= (bw.x + bw.y + bw.z);
+  vec3 p = vWPos * uTriScale;
+  vec3 tx = texture2D(tRockN, p.zy).xyz * 2.0 - 1.0;
+  vec3 ty = texture2D(tRockN, p.xz + 0.37).xyz * 2.0 - 1.0;
+  vec3 tz = texture2D(tRockN, p.xy + 0.71).xyz * 2.0 - 1.0;
+  vec3 sgn = sign(wn);
+  tx.x *= sgn.x; ty.x *= sgn.y; tz.x *= -sgn.z;
+  float k = 1.15 * (1.0 - 0.75 * triMoss) * (1.0 - 0.6 * wxSnow);
+  vec3 nx = vec3(wn.x, wn.y + tx.y * k, wn.z + tx.x * k);
+  vec3 ny = vec3(wn.x + ty.x * k, wn.y, wn.z + ty.y * k);
+  vec3 nz = vec3(wn.x + tz.x * k, wn.y + tz.y * k, wn.z);
+  vec3 nW = normalize(nx * bw.x + ny * bw.y + nz * bw.z);
+  normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
+}
+#endif
 #ifdef GROUND
 {
   vec2 gp = vWPos.xz;
   float y = vWPos.y - uWaterY;
   float underM = smoothstep(0.06, -0.04, y);
   vec3 pn = texture2D(tPebbleN, gp * 1.3).xyz * 2.0 - 1.0;
+  vec3 an = abs(gNrmW);
+  float steep = smoothstep(0.35, 0.7, 1.0 - an.y);
   vec3 mn = texture2D(tMossN, gp * 0.61).xyz * 2.0 - 1.0;
   vec2 nxy = mix(mn.xy * 0.8, pn.xy * 1.1, underM);
   nxy *= 1.0 - max(wxPuddle, wxSnow * 0.7);
-  vec3 nW = normalize(gNrmW + vec3(nxy.x, 0.0, nxy.y));
+  vec3 nW = normalize(gNrmW + vec3(nxy.x, 0.0, nxy.y) * (1.0 - steep));
+  if (steep > 0.0) {
+    bool xs = an.x > an.z;
+    vec3 sn = texture2D(tPebbleN, (xs ? vWPos.zy : vWPos.xy) * 1.3).xyz * 2.0 - 1.0;
+    vec3 add = xs ? vec3(0.0, sn.y, sn.x) : vec3(sn.x, sn.y, 0.0);
+    nW = normalize(nW + add * steep * underM * 0.9);
+  }
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 }
 #endif
@@ -1165,11 +1328,11 @@ const GLSL_LIGHT_EXTRA = /* glsl */`
 `;
 const GLSL_AMBIENT_ATTEN = /* glsl */`
 #if defined( RE_IndirectDiffuse )
-  irradiance *= uwAmb;
-  iblIrradiance *= uwAmb;
+  irradiance *= uwAmb * matAO;
+  iblIrradiance *= uwAmb * matAO;
 #endif
 #if defined( RE_IndirectSpecular )
-  radiance *= uwAmb;
+  radiance *= uwAmb * matAO;
   #ifdef USE_CLEARCOAT
     clearcoatRadiance *= uwAmb;
   #endif
@@ -1287,16 +1450,22 @@ function pondMaxDepth(x, z) {
   return 1.22 - 0.34 * smoothstep(2.0, 4.6, x) + 0.07 * fbm2(x * 0.3, z * 0.3, 2, 8) - 0.12 * smoothstep(-2.5, -4.6, z) * smoothstep(-3.5, 0.5, x);
 }
 const RIM_H = 0.1;
+const BEACH = { x: -2.85, z: 4.05, r: 1.25 };   // suhama pebble beach on the south-west shore
+function beachW(x, z) { return Math.exp(-(sq(x - BEACH.x) + sq(z - BEACH.z) * 1.4) / (2 * BEACH.r * BEACH.r)); }
 function terrainHeight(x, z) {
   const sd = pondSDF(x, z);
+  const bw = beachW(x, z);
   if (sd >= 0) {
     const land = landHeight(x, z);
-    return lerp(RIM_H, land, smoothstep(0.0, 1.5, sd)) + 0.02 * fbm2(x * 2.1, z * 2.1, 2, 9) * smoothstep(0.1, 0.6, sd);
+    let h = lerp(RIM_H, land, smoothstep(0.0, 1.5, sd)) + 0.02 * fbm2(x * 2.1, z * 2.1, 2, 9) * smoothstep(0.1, 0.6, sd);
+    if (bw > 0.001) h = lerp(h, lerp(0.03, land, smoothstep(0.0, 2.2, sd)) + sd * 0.05, bw);
+    return h;
   }
   const t = -sd;
   const maxD = pondMaxDepth(x, z);
   let h = RIM_H - (RIM_H + 0.34) * smoothstep(0.0, 0.3, t) - (maxD - 0.34) * smoothstep(0.42, 2.4, t);
   h += 0.03 * fbm2(x * 1.3, z * 1.3, 3, 10) * smoothstep(0.15, 0.7, t);
+  if (bw > 0.001) h = lerp(h, 0.03 - 0.55 * smoothstep(0.0, 1.9, t) - (maxD - 0.6) * smoothstep(1.2, 2.6, t), bw);
   return h;
 }
 function buildFloorGrid() {
@@ -1310,7 +1479,7 @@ function buildFloorGrid() {
     const fh = terrainHeight(x, z);
     floorGrid[j * SDF_N + i] = fh;
     const k = (j * SDF_N + i) * 4, sd = sdfGrid[j * SDF_N + i];
-    data[k] = H(sd); data[k + 1] = H(fh); data[k + 2] = H(smoothstep(-0.2, -0.45, fh) * smoothstep(-0.7, -0.45, fh)); data[k + 3] = H(1);
+    data[k] = H(sd); data[k + 1] = H(fh); data[k + 2] = H(smoothstep(-0.2, -0.45, fh) * smoothstep(-0.7, -0.45, fh)); data[k + 3] = H(beachW(x, z));
   }
   TEX.mask = dataTex(data, SDF_N, SDF_N, { type: THREE.HalfFloatType, wrap: THREE.ClampToEdgeWrapping, mips: false, aniso: 1 });
   G.tMask.value = TEX.mask;
@@ -1386,6 +1555,250 @@ function buildTerrain() {
 /* =====================================================================================
    7. STONES
    ===================================================================================== */
+const ROCKS = [];        // avoidance / collision records: {x, z, r, top, bottom, geom (world space)}
+let rockMat, lanternMat;
+const TURTLE_ROCK = { x: -5.0, z: -1.25, top: 0.3 };
+
+// Lathe/noise boulder: superellipse lathe profile, planar cuts for granite facets, FBM displacement.
+function rockGeometry(seed, sx, sy, sz, o = {}) {
+  const R = mulberry32(seed * 7919 + 13);
+  const prof = [], K = o.rings || 14, e = o.square || 0.62;
+  for (let i = 0; i <= K; i++) {
+    const a = -Math.PI / 2 + (i / K) * Math.PI;
+    const c = Math.cos(a), sn = Math.sin(a);
+    prof.push([Math.max(Math.pow(Math.abs(c), e), 1e-4), Math.sign(sn) * Math.pow(Math.abs(sn), e)]);
+  }
+  prof[0][0] = 0; prof[K][0] = 0;
+  const g = weld(latheGeom(prof, o.segs || 26));
+  const planes = [];
+  const nc = o.cuts === undefined ? 5 : o.cuts;
+  for (let i = 0; i < nc; i++) {
+    const th = R() * Math.PI * 2, ph = Math.acos(R() * 1.6 - 0.8);
+    planes.push({ n: new THREE.Vector3(Math.sin(ph) * Math.cos(th), Math.cos(ph), Math.sin(ph) * Math.sin(th)), d: 0.72 + R() * 0.22 });
+  }
+  const ox = R() * 100, oy = R() * 100, oz = R() * 100;
+  const p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    let rad = v.length();
+    if (rad < 1e-6) continue;
+    v.multiplyScalar(1 / rad);
+    for (const pl of planes) { const c = v.dot(pl.n); if (c > 0.05) rad = smin(rad, pl.d / c, 0.14); }
+    rad *= 1 + fbm3(v.x * 1.6 + ox, v.y * 1.6 + oy, v.z * 1.6 + oz, 3) * (o.rough === undefined ? 0.17 : o.rough)
+      + fbm3(v.x * 4.2 + oy, v.y * 4.2, v.z * 4.2 + ox, 3) * 0.05 + vnoise3(v.x * 12 + oz, v.y * 12, v.z * 12) * 0.012;
+    let x = v.x * rad * sx, y = v.y * rad * sy, z = v.z * rad * sz;
+    if (o.flatTop) y = smin(y, sy * o.flatTop, sy * 0.12);
+    if (o.flatBottom !== false) y = smax(y, -sy * 0.72, sy * 0.1);
+    p.setXYZ(i, x, y, z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// stretch the lower part of a rock down so its base sits below the lowest ground under its footprint
+function anchorToGround(g, sy, embed = 0.12) {
+  const b = g.boundingBox;
+  let low = 1e9;
+  for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) low = Math.min(low, terrainHeight(lerp(b.min.x, b.max.x, i / 4), lerp(b.min.z, b.max.z, j / 4)));
+  const target = low - embed;
+  if (b.min.y > target) {
+    const pos = g.attributes.position, extra = b.min.y - target, span = Math.max((b.max.y - b.min.y) * 0.55, 0.05);
+    for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); const w = 1 - smoothstep(b.min.y, b.min.y + span, y); pos.setY(i, y - extra * w); }
+  }
+  g.computeVertexNormals(); g.computeBoundingBox(); g.computeBoundingSphere();
+  return g;
+}
+// transform a rock and register it; returns world-space geometry
+function placeGeom(g, x, y, z, yaw = 0, rx = 0, rz = 0, sc = 1) {
+  const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, yaw, rz, 'YXZ')), new THREE.Vector3(sc, sc, sc));
+  g.applyMatrix4(m);
+  g.computeBoundingBox(); g.computeBoundingSphere();
+  return g;
+}
+function layerOfBox(b) { return b.max.y < WATER_Y - 0.06 ? LAYER.UNDER : b.min.y > WATER_Y + 0.06 ? LAYER.ABOVE : LAYER.BOTH; }
+// polygonal lathe (hexagonal lantern parts) with optional corner lift for upturned roofs
+function polyLathe(profile, sides = 6, sub = 5, liftFn = null, rot = 0) {
+  const segs = sides * sub, pos = [], idx = [];
+  const half = Math.PI / sides;
+  for (let i = 0; i < profile.length; i++) {
+    const [rc, y] = profile[i];
+    for (let j = 0; j <= segs; j++) {
+      const a = (j / segs) * Math.PI * 2;
+      let local = ((a + half) % (2 * half)) - half;
+      const rad = rc * Math.cos(half) / Math.cos(local);
+      const corner = Math.abs(local) / half;
+      const yy = y + (liftFn ? liftFn(i, corner, rc) : 0);
+      pos.push(Math.cos(a + rot) * rad, yy, Math.sin(a + rot) * rad);
+    }
+  }
+  for (let i = 0; i < profile.length - 1; i++) for (let j = 0; j < segs; j++) {
+    const a = i * (segs + 1) + j, b = a + segs + 1;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  const w = weld(g);
+  w.computeVertexNormals();
+  return w;
+}
+function roundLathe(profile, segs = 20) { return keepAttrs(latheGeom(profile, segs), ['position', 'normal']); }
+function boxAt(w, h, d, x, y, z, yaw = 0) {
+  const g = keepAttrs(new THREE.BoxGeometry(w, h, d), ['position', 'normal']);
+  g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1)));
+  return g;
+}
+// hexagonal fire box with window openings on the listed sides
+function fireBox(rc, y0, y1, windows) {
+  const parts = [], side = rc, apo = rc * Math.cos(Math.PI / 6), h = y1 - y0, t = 0.035;
+  for (let k = 0; k < 6; k++) {
+    const a = k * (Math.PI / 3);
+    const cx = Math.cos(a) * (apo - t / 2), cz = Math.sin(a) * (apo - t / 2), yaw = -a + Math.PI / 2;
+    const tx = -Math.sin(a), tz = Math.cos(a);
+    if (windows.includes(k)) {
+      const post = side * 0.2;
+      for (const sgn of [-1, 1]) parts.push(boxAt(post, h, t, cx + tx * sgn * (side / 2 - post / 2), y0 + h / 2, cz + tz * sgn * (side / 2 - post / 2), yaw));
+      parts.push(boxAt(side, h * 0.16, t, cx, y1 - h * 0.08, cz, yaw));
+      parts.push(boxAt(side, h * 0.14, t, cx, y0 + h * 0.07, cz, yaw));
+    } else parts.push(boxAt(side * 1.02, h, t, cx, y0 + h / 2, cz, yaw));
+  }
+  return parts;
+}
+function kasugaLantern() {
+  const P6 = (prof, lift) => polyLathe(prof, 6, 4, lift);
+  const parts = [
+    P6([[0.0, 0.0], [0.41, 0.0], [0.43, 0.06], [0.4, 0.1], [0.3, 0.15], [0.14, 0.19], [0.0, 0.19]]),
+    roundLathe([[0.0, 0.17], [0.1, 0.17], [0.1, 0.52], [0.128, 0.545], [0.128, 0.585], [0.1, 0.61], [0.1, 0.97], [0.0, 0.97]], 20),
+    P6([[0.0, 0.95], [0.09, 0.95], [0.22, 0.99], [0.31, 1.05], [0.335, 1.1], [0.31, 1.13], [0.0, 1.13]]),
+    ...fireBox(0.21, 1.13, 1.42, [0, 3]),
+    P6([[0.0, 1.415], [0.26, 1.415], [0.27, 1.44], [0.0, 1.44]]),
+    P6([[0.0, 1.43], [0.2, 1.43], [0.5, 1.405], [0.56, 1.425], [0.57, 1.46], [0.52, 1.49], [0.34, 1.54], [0.16, 1.6], [0.06, 1.62], [0.0, 1.625]],
+      (i, c, rc) => 0.06 * Math.pow(c, 5) * smoothstep(0.3, 0.55, rc)),
+    roundLathe([[0.0, 1.61], [0.08, 1.615], [0.1, 1.64], [0.075, 1.66], [0.1, 1.69], [0.105, 1.73], [0.08, 1.78], [0.035, 1.82], [0.0, 1.845]], 16),
+  ];
+  // warabite curls at the roof corners
+  for (let k = 0; k < 6; k++) {
+    const a = (k + 0.5) * (Math.PI / 3), r = 0.565;
+    const cg = keepAttrs(new THREE.SphereGeometry(0.032, 8, 6), ['position', 'normal']);
+    cg.applyMatrix4(new THREE.Matrix4().makeScale(1, 1.3, 1).premultiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 1.5, Math.sin(a) * r)));
+    parts.push(cg);
+  }
+  return mergeGeoms(parts);
+}
+function yukimiLantern() {
+  const P6 = (prof, lift) => polyLathe(prof, 6, 4, lift);
+  const parts = [];
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2 + 0.5;
+    const pts = [];
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10;
+      const r = lerp(0.46, 0.2, Math.pow(t, 0.7)), y = lerp(-0.08, 0.44, t) + Math.sin(t * Math.PI) * 0.02;
+      pts.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
+    }
+    parts.push(keepAttrs(tubeGeom(pts, (t) => lerp(0.05, 0.04, t), 8), ['position', 'normal']));
+  }
+  parts.push(P6([[0.0, 0.42], [0.3, 0.42], [0.33, 0.46], [0.3, 0.5], [0.0, 0.5]]));
+  parts.push(...fireBox(0.2, 0.5, 0.72, [0, 2, 4]));
+  parts.push(P6([[0.0, 0.715], [0.24, 0.715], [0.25, 0.735], [0.0, 0.735]]));
+  parts.push(P6([[0.0, 0.73], [0.22, 0.73], [0.6, 0.71], [0.66, 0.74], [0.66, 0.78], [0.58, 0.8], [0.36, 0.86], [0.14, 0.93], [0.05, 0.95], [0.0, 0.955]],
+    (i, c, rc) => 0.07 * Math.pow(c, 4) * smoothstep(0.35, 0.62, rc)));
+  parts.push(roundLathe([[0.0, 0.94], [0.06, 0.945], [0.075, 0.98], [0.055, 1.02], [0.02, 1.05], [0.0, 1.06]], 14));
+  return mergeGeoms(parts);
+}
+
+function buildStones() {
+  const U = (scale, moss, lichen) => ({ tRock: { value: TEX.rock }, tRockN: { value: TEX.rockN }, tMossT: { value: TEX.moss }, uTriScale: { value: scale }, uMossAmt: { value: moss }, uLichen: { value: lichen } });
+  rockMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xc4c0b9, roughness: 0.84, metalness: 0, envMapIntensity: 0.8 }), { tri: true, porosity: 0.7, extraUniforms: U(1.55, 0.5, 1.0), key: 'rock' });
+  lanternMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xbdb8ae, roughness: 0.88, metalness: 0, envMapIntensity: 0.8 }), { tri: true, porosity: 0.7, extraUniforms: U(2.3, 0.75, 1.3), key: 'lantern' });
+  const groups = new Map();
+  const add = (g, mat, rec = true, collide = true) => {
+    const layer = layerOfBox(g.boundingBox);
+    const key = mat.uuid + ':' + layer;
+    if (!groups.has(key)) groups.set(key, { mat, layer, list: [] });
+    groups.get(key).list.push(g);
+    if (rec) {
+      const b = g.boundingBox;
+      ROCKS.push({ x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2, r: Math.max(b.max.x - b.min.x, b.max.z - b.min.z) * 0.5, top: b.max.y, bottom: b.min.y, geom: collide ? g : null });
+    }
+  };
+  let seed = 1;
+  // --- coping stones along the rim ---
+  const pts = POND_PTS, n = pts.length, cum = [0];
+  for (let i = 1; i <= n; i++) cum.push(cum[i - 1] + Math.hypot(pts[i % n][0] - pts[i - 1][0], pts[i % n][1] - pts[i - 1][1]));
+  const per = cum[n];
+  const atArc = (sArc) => {
+    sArc = ((sArc % per) + per) % per;
+    let i = 0; while (i < n - 1 && cum[i + 1] < sArc) i++;
+    const a = pts[i], b = pts[(i + 1) % n], t = (sArc - cum[i]) / Math.max(cum[i + 1] - cum[i], 1e-6);
+    const tx = b[0] - a[0], tz = b[1] - a[1], l = Math.hypot(tx, tz) || 1;
+    return { x: lerp(a[0], b[0], t), z: lerp(a[1], b[1], t), tx: tx / l, tz: tz / l };
+  };
+  const grad = new THREE.Vector2();
+  const skipCoping = (x, z) => beachW(x, z) > 0.2 || (x > -1.9 && x < 1.1 && z < -4.25);
+  let sArc = 0;
+  while (sArc < per - 0.35) {
+    const L = rr(0.36, 0.7);
+    const q = atArc(sArc + L / 2);
+    if (!skipCoping(q.x, q.z)) {
+      pondSDFGrad(q.x, q.z, grad);
+      const D = rr(0.36, 0.56), T = rr(0.26, 0.36), over = rr(0.04, 0.12);
+      const g = rockGeometry(seed++, L * 0.55, T * 0.5, D * 0.5, { flatTop: 0.66, square: 0.4, rough: 0.12, cuts: 5, segs: 22, rings: 10 });
+      const cx = q.x + grad.x * (D / 2 - over), cz = q.z + grad.y * (D / 2 - over);
+      placeGeom(g, cx, 0, cz, Math.atan2(-q.tz, q.tx), rr(-0.04, 0.04), rr(-0.04, 0.04));
+      const top = RIM_H + rr(0.035, 0.1);
+      g.translate(0, top - g.boundingBox.max.y, 0);
+      g.computeBoundingBox();
+      anchorToGround(g, T * 0.5, 0.06);
+      add(g, rockMat, true, true);
+    }
+    sArc += L + rr(0.0, 0.045);
+  }
+  // --- boulders: [x, z, sx, sy, sz, top, yaw, opts] (top = absolute top height) ---
+  const B = [
+    [TURTLE_ROCK.x, TURTLE_ROCK.z, 0.5, 0.5, 0.42, TURTLE_ROCK.top, 0.4, { flatTop: 0.7, square: 0.5 }], // basking rock
+    [4.95, -1.65, 0.34, 0.45, 0.3, 0.36, 1.1, {}], [5.35, -1.12, 0.28, 0.25, 0.25, 0.08, 0.2, {}],
+    [-2.1, -1.1, 0.5, 0.3, 0.42, -0.62, 0.7, {}], [0.9, 0.35, 0.38, 0.25, 0.3, -0.78, 2.0, {}], [-4.2, 2.2, 0.3, 0.22, 0.26, -0.28, 1.3, {}],
+    [-6.75, 2.25, 0.45, 0.42, 0.4, 0.55, 0.3, {}], [-7.0, -2.25, 0.55, 0.5, 0.45, 0.72, 1.7, {}], [3.35, 2.75, 0.4, 0.32, 0.36, 0.42, 0.9, {}],
+    [6.95, -3.05, 0.5, 0.45, 0.42, 0.62, 2.4, {}], [6.95, 0.75, 0.32, 0.26, 0.3, 0.38, 0.1, {}], [-4.55, 4.95, 0.34, 0.24, 0.3, 0.28, 1.0, {}],
+    [2.25, -5.45, 0.42, 0.36, 0.38, 0.62, 0.6, {}], [-2.5, -5.35, 0.4, 0.38, 0.36, 0.72, 2.2, {}], [4.6, 3.05, 0.3, 0.22, 0.26, 0.3, 0.4, {}],
+    // waterfall (north cove): mizuochi lip stone between two taller waki-ishi, backed by stones on the hill, foot stones in the water
+    [-0.35, -5.38, 0.46, 0.42, 0.36, 0.95, 0.0, { flatTop: 0.8, square: 0.36, cuts: 8 }],
+    [-1.12, -5.3, 0.46, 0.62, 0.42, 1.34, 0.45, { square: 0.42 }], [0.46, -5.36, 0.46, 0.58, 0.44, 1.24, 2.7, { square: 0.42 }],
+    [-0.4, -5.95, 0.6, 0.5, 0.45, 1.5, 1.4, {}], [-1.35, -6.05, 0.55, 0.52, 0.45, 1.55, 0.3, {}], [0.7, -6.02, 0.55, 0.5, 0.48, 1.42, 2.2, {}],
+    [-1.62, -4.78, 0.36, 0.32, 0.34, 0.34, 0.9, {}], [0.95, -4.85, 0.38, 0.34, 0.34, 0.38, 1.9, {}],
+    [-0.98, -4.62, 0.3, 0.28, 0.3, 0.16, 0.2, {}], [0.3, -4.66, 0.32, 0.3, 0.3, 0.22, 1.2, {}],
+    [-0.36, -4.9, 0.26, 0.18, 0.22, -0.07, 0.9, {}],
+  ];
+  for (const [x, z, sx, sy, sz, top, yaw, o] of B) {
+    const g = rockGeometry(seed++, sx, sy, sz, Object.assign({ segs: 30, rings: 16, cuts: 7, square: 0.5 }, o));
+    placeGeom(g, x, 0, z, yaw, rr(-0.08, 0.08), rr(-0.08, 0.08));
+    g.translate(0, top - g.boundingBox.max.y, 0);
+    g.computeBoundingBox();
+    anchorToGround(g, sy);
+    add(g, rockMat, true, true);
+  }
+  // --- stepping stones (tobi-ishi) to the pavilion ---
+  const path = [[1.9, 5.45], [2.55, 5.0], [3.25, 4.62], [4.0, 4.3], [4.8, 3.95], [5.55, 3.5], [6.25, 2.95], [6.9, 2.3], [7.35, 1.55], [7.65, 0.8]];
+  for (const [x, z] of path) {
+    const g = rockGeometry(seed++, rr(0.2, 0.26), 0.07, rr(0.17, 0.22), { flatTop: 0.55, square: 0.45, rough: 0.08, cuts: 2, segs: 18, rings: 8 });
+    placeGeom(g, x + rr(-0.05, 0.05), 0, z + rr(-0.05, 0.05), rr(0, 3), 0, 0);
+    g.translate(0, terrainHeight(x, z) + 0.035 - g.boundingBox.max.y, 0);
+    g.computeBoundingBox(); g.computeBoundingSphere();
+    add(g, rockMat, false);
+  }
+  // --- lanterns ---
+  const kas = placeGeom(kasugaLantern(), -1.95, terrainHeight(-1.95, 6.05) - 0.03, 6.05, 0.35);
+  add(kas, lanternMat, true, true);
+  const yuk = placeGeom(yukimiLantern(), -6.4, terrainHeight(-6.4, 0.95) - 0.02, 0.95, 0.9);
+  add(yuk, lanternMat, true, true);
+  // merge per material and layer
+  for (const { mat, layer, list } of groups.values()) {
+    const m = new THREE.Mesh(mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal']))), mat);
+    m.castShadow = true; m.receiveShadow = true;
+    m.layers.set(layer);
+    scene.add(m);
+  }
+}
 
 /* =====================================================================================
    8. BRIDGE + PAVILION
@@ -1637,11 +2050,12 @@ window.KOI = KOI;
 async function init() {
   const steps = [
     ['Renderer', buildRenderer],
-    ['Textures', () => { makePebbleTextures(); makeMossTextures(); makeCausticTexture(); G.tCaustics.value = TEX.caustics; }],
+    ['Textures', () => { makePebbleTextures(); makeMossTextures(); makeCausticTexture(); makeRockTextures(); makeWoodTextures(); G.tCaustics.value = TEX.caustics; }],
     ['Sky & light', buildSkyAndLights],
     ['Pond outline', buildPondOutline],
     ['Pond floor', buildFloorGrid],
     ['Terrain', buildTerrain],
+    ['Stones', buildStones],
     ['Water', buildWater],
     ['Post-processing', buildPost],
   ];
