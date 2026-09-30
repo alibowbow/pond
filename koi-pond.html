@@ -391,6 +391,63 @@ function makeWoodTextures() {
   TEX.woodN = dataTex(heightToNormal(hf, N, N, 3), N, N);
 }
 
+// ---------- koi textures: overlapping-cycloid scales, fin rays ----------
+const KOI_SC = { C: 8, R: 9, U: 4.5, V: 3 };   // scales per tile (columns along s, rows around), tile repeats on the body
+function makeKoiScaleTexture() {
+  const N = 512, C = KOI_SC.C, R = KOI_SC.R;
+  const hf = new Float32Array(N * N), out = new Uint8Array(N * N * 4), idA = new Uint8Array(N * N), rimA = new Uint8Array(N * N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const cu = ((x + 0.5) / N) * C, cv = ((y + 0.5) / N) * R;
+    const ci = Math.floor(cu);
+    let best = null;
+    for (let dc = -1; dc <= 1; dc++) {
+      const c = ci + dc;
+      const off = (((c % C) + C) % C) & 1 ? 0.5 : 0;
+      const ri = Math.floor(cv - off);
+      for (let dr = -1; dr <= 1; dr++) {
+        const r = ri + dr;
+        const dx = cu - (c + 0.5), dy = cv - (r + 0.5 + off);
+        const d = Math.hypot(dx, dy * 1.05);
+        if (d > 0.78) continue;
+        // anterior scales lie on top of posterior ones; within a column the dorsal neighbour lies on top
+        if (!best || c < best.c || (c === best.c && r < best.r)) best = { c, r, dx, dy, d };
+      }
+    }
+    if (!best) best = { c: ci, r: Math.floor(cv), dx: 0, dy: 0, d: 0.7 };
+    const along = best.dx;
+    let h = 0.18 + 0.82 * smoothstep(-0.34, 0.68, along + Math.max(best.dy, 0) * 0.35);
+    h *= 1 - 0.75 * smoothstep(0.64, 0.78, best.d);
+    h += 0.018 * Math.sin(best.d * 46);
+    hf[y * N + x] = h;
+    const wc = ((best.c % C) + C) % C, wr = ((best.r % R) + R) % R;
+    idA[y * N + x] = Math.round(((wr * C + wc + 0.5) / (C * R)) * 255);
+    rimA[y * N + x] = clamp(smoothstep(0.48, 0.74, best.d) * smoothstep(-0.2, 0.25, along + best.dy * 0.3), 0, 1) * 255;
+  }
+  const nrm = heightToNormal(hf, N, N, 22, rimA);
+  for (let i = 0; i < N * N; i++) { out[i * 4] = nrm[i * 4]; out[i * 4 + 1] = nrm[i * 4 + 1]; out[i * 4 + 2] = idA[i]; out[i * 4 + 3] = rimA[i]; }
+  TEX.koiScale = dataTex(out, N, N, { mips: true });
+  TEX.koiScale.minFilter = THREE.LinearMipmapLinearFilter;
+}
+// fin rays: R ray core, G joint segmentation, B fray noise, A membrane alpha
+function makeFinTexture() {
+  const N = 256, out = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;                      // u along the ray (base->tip), v across
+    const rays = 16;
+    const rv = v * rays + fbm2(u * 3, v * 5, 2, 501) * 0.18;
+    const fr = fract(rv);
+    const ray = Math.pow(Math.max(0, 1 - Math.abs(fr - 0.5) * 2.0 / (0.26 - 0.12 * u)), 1.5);
+    const seg = 0.75 + 0.25 * Math.cos(u * 44 + Math.floor(rv) * 1.7);
+    const fray = fbm2(u * 12, v * 40, 3, 502) * 0.5 + 0.5;
+    const i = (y * N + x) * 4;
+    out[i] = clamp(ray, 0, 1) * 255;
+    out[i + 1] = clamp(seg, 0, 1) * 255;
+    out[i + 2] = fray * 255;
+    out[i + 3] = 255;
+  }
+  TEX.fin = dataTex(out, N, N, { mips: true });
+}
+
 /* =====================================================================================
    3. GEOMETRY HELPERS
    ===================================================================================== */
@@ -570,6 +627,8 @@ const G = {
   uWaves: { value: Array.from({ length: 4 }, () => new THREE.Vector4(1, 0, 1, 0)) },
   uWaveW: { value: new THREE.Vector4() },
   tMask: { value: null },
+  uIblDiffuse: { value: 0.45 },   // sky IBL balance against the 3.3 sun (clear sky ~ 1/4 of the sun on the ground)
+  uIblSpec: { value: 0.8 },
 };
 
 const SKY_VERT = /* glsl */`
@@ -694,7 +753,7 @@ function makeSkyMaterial() {
     name: 'Sky',
     uniforms: {
       sunPosition: { value: new THREE.Vector3(0, 1, 0) }, rayleigh: { value: 1 }, turbidity: { value: 2 }, mieCoefficient: { value: 0.005 },
-      mieDirectionalG: { value: 0.8 }, uSkyScale: { value: 0.42 }, uCloud: { value: 0.55 }, uOvercast: { value: 0 }, uTime: G.uTime,
+      mieDirectionalG: { value: 0.8 }, uSkyScale: { value: 0.37 }, uCloud: { value: 0.55 }, uOvercast: { value: 0 }, uTime: G.uTime,
       uWindDir: G.uWindDir, uCloudSun: { value: new THREE.Color() }, uCloudAmb: { value: new THREE.Color() }, uGround: { value: new THREE.Color(0.05, 0.055, 0.04) },
       uSunDisc: { value: 1 },
     },
@@ -807,7 +866,8 @@ function updateEnvironment(force = false) {
   env.skyCol.copy(skyZen).lerp(new THREE.Color(grey, grey * 1.02, grey * 1.06), env.overcast);
   hemiLight.color.copy(env.skyCol);
   hemiLight.groundColor.setRGB(0.19, 0.17, 0.12);
-  hemiLight.intensity = 0.32 * env.hemiMul * (0.4 + 0.6 * elevFade);
+  hemiLight.intensity = 0.2 * env.hemiMul * (0.4 + 0.6 * elevFade);
+  G.uIblDiffuse.value = lerp(0.45, 0.8, env.overcast);
   // global uniforms
   G.uSunDir.value.copy(sd);
   const cosI = sd.y, sinI = Math.sqrt(Math.max(0, 1 - cosI * cosI));
@@ -896,6 +956,8 @@ uniform float uFogDensity;
 uniform vec3 uFogColor;
 uniform float uRain;
 uniform float uIce;
+uniform float uIblDiffuse;
+uniform float uIblSpec;
 uniform vec4 uSim;
 uniform sampler2D tRipple;
 uniform sampler2D tMask;
@@ -1011,7 +1073,7 @@ vec3 causticsAt(vec3 p, float depth) {
   c.b = texture2D(tCaustics, u1 - disp).r * texture2D(tCaustics, u2 - disp).r;
   c *= 8.16; // 1 / mean^2 of the stored pattern
   float focus = smoothstep(0.0, 0.18, depth) * mix(1.0, 0.45, smoothstep(0.7, 2.2, depth));
-  return max(mix(vec3(1.0), c, focus * uCaustic * 0.75), vec3(0.0));
+  return max(mix(vec3(1.0), c, focus * uCaustic * 0.62), vec3(0.0));
 }
 // Koi spine (must match the koi vertex shader): lateral offset at s
 float koiLat(float s, vec4 B) {
@@ -1075,6 +1137,7 @@ function patchMaterial(mat, opts = {}) {
     let vs = sh.vertexShader, fs = sh.fragmentShader;
     vs = vs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_VERT_PARS +
       (opts.float ? 'varying vec3 vFloatN;\n' : '') + (opts.vertPars || ''));
+    vs = vs.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n' + (opts.vertNormal || ''));
     vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (opts.vertBegin || ''));
     vs = vs.replace('#include <project_vertex>', GLSL_PROJECT);
     vs = vs.replace('#include <worldpos_vertex>', 'vec4 worldPosition = wp;');
@@ -1107,6 +1170,7 @@ function patchMaterial(mat, opts = {}) {
     fs = fs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_FRAG_PARS + (opts.float ? 'varying vec3 vFloatN;\n' : '') + GLSL_MATERIAL_PARS + (opts.fragPars || ''));
     fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
     fs = fs.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + GLSL_ROUGH + (opts.roughness || ''));
+    fs = fs.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + (opts.metal || ''));
     fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GLSL_NORMAL + (opts.normal || ''));
     fs = fs.replace('#include <lights_fragment_begin>', GLSL_UNDERWATER_PREP + (opts.preLights || '') + lfb);
     fs = fs.replace('#include <lights_fragment_end>', GLSL_AMBIENT_ATTEN + '#include <lights_fragment_end>\n' + GLSL_SPEC_LOSS + (opts.postLights || ''));
@@ -1341,10 +1405,15 @@ const GLSL_LIGHT_EXTRA = /* glsl */`
 const GLSL_AMBIENT_ATTEN = /* glsl */`
 #if defined( RE_IndirectDiffuse )
   irradiance *= uwAmb * matAO;
-  iblIrradiance *= uwAmb * matAO;
+  iblIrradiance *= uwAmb * matAO * uIblDiffuse;
 #endif
 #if defined( RE_IndirectSpecular )
-  radiance *= uwAmb * matAO;
+  radiance *= uwAmb * matAO * uIblSpec;
+  if (uwMask > 0.0) {
+    // under water the sky is only seen through Snell's window; elsewhere reflections see the water column
+    vec3 rw = normalize((vec4(reflect(-geometryViewDir, geometryNormal), 0.0) * viewMatrix).xyz);
+    radiance = mix(radiance, mix(uInscatter * 1.8, radiance, smoothstep(0.55, 0.75, rw.y)), uwMask);
+  }
   #ifdef USE_CLEARCOAT
     clearcoatRadiance *= uwAmb;
   #endif
@@ -2360,6 +2429,892 @@ function updateWaterfall(dt) {
 /* =====================================================================================
    11. KOI
    ===================================================================================== */
+// ---------- koi body: analytic profile tables (s = 0 nose .. 1 caudal peduncle) ----------
+const KOI_TOP = [0.012, 0.043, 0.064, 0.08, 0.093, 0.103, 0.11, 0.114, 0.116, 0.115, 0.111, 0.105, 0.097, 0.087, 0.076, 0.064, 0.053, 0.043, 0.035, 0.029, 0.026];
+const KOI_BOT = [0.008, 0.031, 0.048, 0.061, 0.072, 0.081, 0.088, 0.094, 0.097, 0.098, 0.096, 0.091, 0.084, 0.074, 0.062, 0.05, 0.04, 0.032, 0.026, 0.022, 0.02];
+const KOI_WID = [0.010, 0.036, 0.056, 0.071, 0.082, 0.090, 0.095, 0.0998, 0.0994, 0.0975, 0.094, 0.088, 0.080, 0.070, 0.059, 0.048, 0.038, 0.030, 0.023, 0.018, 0.015];
+const KOI_LEN = 0.78;          // body length (nose to peduncle) as a fraction of total length
+const KOI_MOUTH_Y = -0.014;    // subterminal mouth
+const koiX = (s) => 0.5 - s * KOI_LEN;
+function koiSurface(s, th, out) {
+  const top = sampleTable(KOI_TOP, s), bot = sampleTable(KOI_BOT, s), wid = sampleTable(KOI_WID, s);
+  const a = th * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+  const yc = KOI_MOUTH_Y * smoothstep(0.12, 0.0, s);
+  const cy = Math.sign(c) * Math.pow(Math.abs(c), c >= 0 ? 0.9 : 0.76);
+  const cz = Math.sign(sn) * Math.pow(Math.abs(sn), 0.86);
+  let y = yc + cy * (c >= 0 ? top : bot), z = cz * wid;
+  const side = Math.abs(sn);
+  // operculum ridge, eye bulge
+  const opc = Math.exp(-sq((s - 0.232) / 0.008)) * smoothstep(0.2, 0.55, side) * smoothstep(-0.95, -0.4, c);
+  const thE = th < 0.5 ? 0.17 : 0.83;
+  const eyeD = Math.hypot((s - 0.105) / 0.028, (th - thE) / 0.04);
+  const bump = 0.0034 * opc + 0.0042 * Math.exp(-eyeD * eyeD);
+  const ry = y - yc, rl = Math.hypot(ry, z) || 1;
+  y += (ry / rl) * bump; z += (z / rl) * bump;
+  out[0] = koiX(s); out[1] = y; out[2] = z;
+  // gill cover (breathing) weight
+  return Math.exp(-sq((s - 0.2) / 0.032)) * smoothstep(0.35, 0.75, side) * (s < 0.236 ? 1 : 0);
+}
+function koiEyeCentre(side) {
+  const p = [0, 0, 0];
+  koiSurface(0.105, side > 0 ? 0.17 : 0.83, p);
+  const ry = p[1] - KOI_MOUTH_Y * smoothstep(0.12, 0, 0.105), rl = Math.hypot(ry, p[2]);
+  return [p[0], p[1] - (ry / rl) * 0.006, p[2] - (p[2] / rl) * 0.006];
+}
+function buildKoiBodyGeometry() {
+  const NS = 54, NT = 32, pos = [], att = [], idx = [];
+  const ring = (fn) => { const start = pos.length / 3; for (let j = 0; j <= NT; j++) fn(j / NT, j); return start; };
+  const rings = [];
+  // throat (inside the mouth), deepest first
+  const throat = [[0.06, 0.0022, 1.0], [0.045, 0.0026, 0.8], [0.028, 0.003, 0.55], [0.012, 0.0033, 0.3]];
+  // cap vertex at the throat end
+  const capI = pos.length / 3;
+  pos.push(0.5 - 0.066, KOI_MOUTH_Y, 0); att.push(0, 0, 3, 1);
+  for (const [dx, r, dep] of throat) rings.push(ring((t) => { const a = t * Math.PI * 2; pos.push(0.5 - dx, KOI_MOUTH_Y + Math.cos(a) * r, Math.sin(a) * r); att.push(0, t, 3, dep); }));
+  // inner lip
+  rings.push(ring((t) => { const a = t * Math.PI * 2; pos.push(0.5 - 0.002, KOI_MOUTH_Y + Math.cos(a) * 0.0035, Math.sin(a) * 0.0035); att.push(0, t, 2, 0); }));
+  // outer lip (s = 0)
+  rings.push(ring((t) => { const a = t * Math.PI * 2; pos.push(0.5, KOI_MOUTH_Y + Math.cos(a) * 0.0055, Math.sin(a) * 0.0055); att.push(0, t, 1, 0); }));
+  // body rings
+  const tmp = [0, 0, 0];
+  for (let i = 1; i <= NS; i++) {
+    const tt = i / NS;
+    const s = 0.5 - 0.5 * Math.cos(Math.PI * Math.pow(tt, 0.9));
+    rings.push(ring((t) => { const gill = koiSurface(s, t, tmp); pos.push(tmp[0], tmp[1], tmp[2]); att.push(s, t, 0, gill); }));
+  }
+  const tailI = pos.length / 3;
+  pos.push(koiX(1.0) - 0.004, 0.003, 0); att.push(1, 0, 0, 0);
+  // cap fan into the throat
+  for (let j = 0; j < NT; j++) idx.push(capI, rings[0] + j, rings[0] + j + 1);
+  for (let r = 0; r < rings.length - 1; r++) for (let j = 0; j < NT; j++) {
+    const a = rings[r] + j, b = rings[r + 1] + j;
+    idx.push(a, b, a + 1, b, b + 1, a + 1);
+  }
+  const last = rings[rings.length - 1];
+  for (let j = 0; j < NT; j++) idx.push(last + j, tailI, last + j + 1);
+  let g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aBody', new THREE.Float32BufferAttribute(att, 4));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  // smooth the seam normals (theta 0 and 1 are duplicated)
+  const nrm = g.attributes.normal;
+  for (const r of rings) {
+    const a = r, b = r + NT;
+    const nx = nrm.getX(a) + nrm.getX(b), ny = nrm.getY(a) + nrm.getY(b), nz = nrm.getZ(a) + nrm.getZ(b), l = Math.hypot(nx, ny, nz) || 1;
+    nrm.setXYZ(a, nx / l, ny / l, nz / l); nrm.setXYZ(b, nx / l, ny / l, nz / l);
+  }
+  // barbels: a long pair at the mouth corners and a short pair above them
+  const parts = [g];
+  for (const side of [1, -1]) {
+    for (const [ox, oy, oz, dx, dy, dz, len, r0] of [[0.494, KOI_MOUTH_Y - 0.002, 0.0072, -0.5, -0.62, 0.45, 0.034, 0.0021], [0.49, KOI_MOUTH_Y + 0.0055, 0.0088, -0.25, -0.35, 0.9, 0.016, 0.0016]]) {
+      const pts = [];
+      for (let k = 0; k <= 6; k++) {
+        const t = k / 6;
+        pts.push(new THREE.Vector3(ox + dx * len * t, oy + dy * len * t - 0.006 * t * t, side * (oz + dz * len * t)));
+      }
+      const tg = tubeGeom(pts, (t) => lerp(r0, r0 * 0.3, t), 5, true);
+      const n = tg.attributes.position.count, a4 = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) { a4[k * 4] = 0.01; a4[k * 4 + 1] = side > 0 ? 0.3 : 0.7; a4[k * 4 + 2] = 4; a4[k * 4 + 3] = 0; }
+      tg.setAttribute('aBody', new THREE.BufferAttribute(a4, 4));
+      tg.deleteAttribute('uv');
+      parts.push(tg);
+    }
+  }
+  g = mergeGeoms(parts);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 0.75);
+  return g;
+}
+// fins: dorsal, forked caudal, anal, pectorals, pelvics. aFin = (type, u along ray, v across, side), aHinge = attachment point
+function buildKoiFinGeometry() {
+  const parts = [];
+  const grid = (type, side, nu, nv, fn) => {
+    const pos = [], uv = [], fin = [], hin = [], idx = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv;
+      const r = fn(u, v);
+      pos.push(...r.p); hin.push(...r.h); uv.push(u, r.tv === undefined ? v : r.tv); fin.push(type, u, r.v === undefined ? v : r.v, side);
+    }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+      const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('aFin', new THREE.Float32BufferAttribute(fin, 4));
+    g.setAttribute('aHinge', new THREE.Float32BufferAttribute(hin, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    parts.push(g);
+  };
+  // dorsal: long, taller at the front, rays raked back
+  grid(0, 0, 6, 16, (u, v) => {
+    const s = lerp(0.335, 0.705, v);
+    const h = [koiX(s), sampleTable(KOI_TOP, s) - 0.004, 0];
+    const al = 0.5 + 0.45 * v, L = 0.026 + 0.078 * Math.pow(1 - v, 0.75);
+    return { p: [h[0] - Math.sin(al) * L * u, h[1] + Math.cos(al) * L * u, 0], h };
+  });
+  // caudal: forked with rounded lobes (v in -1..1)
+  grid(1, 0, 10, 20, (u, vv) => {
+    const v = vv * 2 - 1, av = Math.abs(v);
+    const h = [koiX(0.985), v * 0.021, 0];
+    const phi = v * 0.8;
+    const lobe = 0.58 + 0.42 * smoothstep(0.08, 0.78, av) - 0.14 * smoothstep(0.82, 1.0, av);
+    const L = 0.235 * lobe;
+    return { p: [h[0] - Math.cos(phi) * L * u, h[1] + Math.sin(phi) * L * u, 0], h, v, tv: vv };
+  });
+  // anal
+  grid(2, 0, 5, 6, (u, v) => {
+    const s = lerp(0.735, 0.81, v);
+    const h = [koiX(s), -sampleTable(KOI_BOT, s) + 0.003, 0];
+    const al = 0.62 + 0.3 * v, L = 0.012 + 0.046 * Math.pow(1 - v, 0.6);
+    return { p: [h[0] - Math.sin(al) * L * u, h[1] - Math.cos(al) * L * u, 0], h };
+  });
+  // paired fins, folded rest pose against the body; the shader flares them about the hinge
+  for (const side of [1, -1]) {
+    grid(3, side, 8, 10, (u, v) => {
+      const h = [koiX(0.245), -0.05, side * 0.064];
+      const D = new THREE.Vector3(-1, -0.42, side * 0.1).normalize();
+      const A = new THREE.Vector3(0.1, -1, side * 0.2).normalize();
+      const phi = v * 0.62, L = 0.2 * (1 - 0.45 * Math.pow(v, 1.3));
+      const dir = D.clone().multiplyScalar(Math.cos(phi)).addScaledVector(A, Math.sin(phi));
+      return { p: [h[0] + dir.x * L * u, h[1] + dir.y * L * u, h[2] + dir.z * L * u], h };
+    });
+    grid(4, side, 6, 7, (u, v) => {
+      const h = [koiX(0.5), -0.08, side * 0.03];
+      const D = new THREE.Vector3(-1, -0.5, side * 0.12).normalize();
+      const A = new THREE.Vector3(0.15, -1, side * 0.15).normalize();
+      const phi = v * 0.55, L = 0.1 * (1 - 0.42 * v);
+      const dir = D.clone().multiplyScalar(Math.cos(phi)).addScaledVector(A, Math.sin(phi));
+      return { p: [h[0] + dir.x * L * u, h[1] + dir.y * L * u, h[2] + dir.z * L * u], h };
+    });
+  }
+  const g = mergeGeoms(parts);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1.1);
+  return g;
+}
+function buildKoiEyeGeometry() {
+  const parts = [];
+  for (const side of [1, -1]) {
+    const sg = new THREE.SphereGeometry(0.0158, 20, 14);
+    const c = koiEyeCentre(side);
+    sg.translate(c[0], c[1], c[2]);
+    const n = sg.attributes.position.count, a = new Float32Array(n * 4);
+    for (let k = 0; k < n; k++) { a[k * 4] = side; a[k * 4 + 1] = c[0]; a[k * 4 + 2] = c[1]; a[k * 4 + 3] = c[2]; }
+    sg.setAttribute('aEye', new THREE.BufferAttribute(a, 4));
+    sg.deleteAttribute('uv');
+    parts.push(sg);
+  }
+  const g = mergeGeoms(parts);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 0.75);
+  return g;
+}
+
+// ---------- varieties (linear colours) and the roster ----------
+const KW = [0.8, 0.8, 0.775], KRED = [0.6, 0.032, 0.012], KSUMI = [0.006, 0.006, 0.008];
+const VARIETIES = {
+  'Kohaku':         { pat: 'kohaku', base: KW, hi: KRED, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.84, 0.82, 0.78], cc: 0.8, ir: 0.25, met: 0 },
+  'Sanke':          { pat: 'sanke', base: KW, hi: KRED, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.84, 0.82, 0.78], cc: 0.8, ir: 0.25, met: 0, tejima: 1 },
+  'Yamabuki Ogon':  { pat: 'solid', base: [0.8, 0.5, 0.055], hi: [0.8, 0.5, 0.05], sumi: KSUMI, belly: [0.86, 0.62, 0.12], fin: [0.84, 0.56, 0.09], finBase: [0.82, 0.52, 0.07], cc: 1.0, ir: 0.55, met: 0.62 },
+  'Showa':          { pat: 'showa', base: KW, hi: KRED, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.01, 0.01, 0.012], cc: 0.85, ir: 0.25, met: 0, hajiro: 1 },
+  'Orenji Ogon':    { pat: 'solid', base: [0.86, 0.24, 0.02], hi: [0.86, 0.24, 0.02], sumi: KSUMI, belly: [0.9, 0.36, 0.05], fin: [0.88, 0.3, 0.04], finBase: [0.86, 0.26, 0.03], cc: 1.0, ir: 0.56, met: 0.62 },
+  'Karasugoi':      { pat: 'solid', base: [0.011, 0.011, 0.013], hi: [0, 0, 0], sumi: KSUMI, belly: [0.2, 0.08, 0.03], fin: [0.014, 0.014, 0.016], finBase: [0.01, 0.01, 0.012], cc: 0.95, ir: 0.25, met: 0, hajiro: 1 },
+  'Tancho':         { pat: 'tancho', base: KW, hi: KRED, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.84, 0.82, 0.78], cc: 0.8, ir: 0.25, met: 0 },
+  'Bekko':          { pat: 'bekko', base: KW, hi: KW, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.84, 0.82, 0.78], cc: 0.75, ir: 0.25, met: 0, tejima: 1 },
+  'Asagi':          { pat: 'asagi', base: [0.16, 0.25, 0.4], hi: [0.78, 0.2, 0.035], sumi: [0.03, 0.05, 0.1], belly: [0.8, 0.27, 0.06], fin: [0.78, 0.4, 0.2], finBase: [0.8, 0.22, 0.04], cc: 0.8, ir: 0.3, met: 0, retic: 1 },
+  'Platinum':       { pat: 'solid', base: [0.82, 0.83, 0.81], hi: [0.82, 0.83, 0.81], sumi: KSUMI, belly: [0.86, 0.86, 0.84], fin: [0.82, 0.82, 0.8], finBase: [0.82, 0.82, 0.8], cc: 1.0, ir: 0.55, met: 0.6, butterfly: 1 },
+  'Chagoi':         { pat: 'solid', base: [0.24, 0.12, 0.045], hi: [0.3, 0.16, 0.06], sumi: KSUMI, belly: [0.36, 0.2, 0.08], fin: [0.3, 0.16, 0.06], finBase: [0.26, 0.13, 0.05], cc: 0.9, ir: 0.4, met: 0.25, retic: 3 },
+  'Shiro Utsuri':   { pat: 'utsuri', base: KW, hi: KW, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.01, 0.01, 0.012], cc: 0.85, ir: 0.25, met: 0 },
+  'Hi Utsuri':      { pat: 'utsuri', base: [0.74, 0.13, 0.02], hi: [0.74, 0.13, 0.02], sumi: KSUMI, belly: [0.8, 0.3, 0.08], fin: [0.78, 0.22, 0.05], finBase: [0.01, 0.01, 0.012], cc: 0.85, ir: 0.25, met: 0 },
+  'Kujaku':         { pat: 'kohaku', base: [0.78, 0.79, 0.77], hi: [0.86, 0.22, 0.025], sumi: [0.02, 0.022, 0.03], belly: [0.84, 0.84, 0.82], fin: [0.82, 0.8, 0.76], finBase: [0.84, 0.4, 0.1], cc: 1.0, ir: 0.55, met: 0.58, retic: 2, butterfly: 1 },
+  'Doitsu Kohaku':  { pat: 'kohaku', base: KW, hi: KRED, sumi: KSUMI, belly: KW, fin: [0.84, 0.83, 0.8], finBase: [0.84, 0.82, 0.78], cc: 0.9, ir: 0.28, met: 0, doitsu: 1 },
+  'Goshiki':        { pat: 'kohaku', base: [0.5, 0.53, 0.58], hi: [0.56, 0.05, 0.03], sumi: [0.02, 0.035, 0.07], belly: [0.72, 0.73, 0.74], fin: [0.7, 0.72, 0.74], finBase: [0.5, 0.52, 0.56], cc: 0.8, ir: 0.3, met: 0, retic: 4 },
+  'Benigoi':        { pat: 'solid', base: [0.62, 0.042, 0.01], hi: [0.62, 0.042, 0.01], sumi: KSUMI, belly: [0.72, 0.2, 0.07], fin: [0.7, 0.09, 0.025], finBase: [0.66, 0.06, 0.015], cc: 0.8, ir: 0.25, met: 0 },
+  'Ochiba Shigure': { pat: 'ochiba', base: [0.3, 0.35, 0.42], hi: [0.36, 0.17, 0.055], sumi: KSUMI, belly: [0.52, 0.55, 0.58], fin: [0.44, 0.47, 0.52], finBase: [0.4, 0.42, 0.46], cc: 0.8, ir: 0.3, met: 0, retic: 5 },
+};
+// [variety, size (m), extras]
+const ROSTER = [
+  ['Kohaku', 0.7, {}], ['Sanke', 0.46, {}], ['Yamabuki Ogon', 0.66, {}], ['Showa', 0.72, {}], ['Orenji Ogon', 0.44, { ginrin: 1 }],
+  ['Karasugoi', 0.48, {}], ['Tancho', 0.42, {}], ['Bekko', 0.26, {}], ['Sanke', 0.24, {}], ['Asagi', 0.45, {}],
+  ['Platinum', 0.43, {}], ['Chagoi', 0.74, {}], ['Shiro Utsuri', 0.47, {}], ['Hi Utsuri', 0.27, {}], ['Kujaku', 0.41, {}],
+  ['Doitsu Kohaku', 0.44, {}], ['Goshiki', 0.25, {}], ['Benigoi', 0.28, {}], ['Ochiba Shigure', 0.49, {}], ['Kohaku', 0.22, { ginrin: 1 }],
+];
+const PAT_W = 256, PAT_H = 128, ATLAS_C = 4, ATLAS_R = 5;
+// hue / saturation / lightness jitter so no two fish match
+function jitterColour(c, R, amt = 1) {
+  const col = new THREE.Color(c[0], c[1], c[2]);
+  const hsl = {}; col.getHSL(hsl);
+  col.setHSL((hsl.h + (R() - 0.5) * 0.02 * amt + 1) % 1, clamp(hsl.s * (1 + (R() - 0.5) * 0.16 * amt), 0, 1), clamp(hsl.l * (1 + (R() - 0.5) * 0.12 * amt), 0, 1));
+  return [col.r, col.g, col.b];
+}
+// pattern field for one fish: R = hi (red) field, G = sumi, B = tone, A = belly; sampled on the body cylinder
+function koiPatternFn(f) {
+  const R = mulberry32(f.seed);
+  const pat = f.v.pat, sd = f.seed * 0.013;
+  const patches = [];
+  const addSteps = (minN, maxN, lenA, lenB, gapA, gapB, widA, widB, start) => {
+    const n = minN + Math.floor(R() * (maxN - minN + 1));
+    let sp = start;
+    for (let k = 0; k < n && sp < 0.8; k++) {
+      const len = k === 0 ? lenA + R() * 0.06 : lenB + R() * 0.1;
+      const b = Math.min(sp + len, 0.88);
+      patches.push({ a: sp, b, wid: lerp(widA, widB, R()) * (k === 0 ? 0.8 : 1), off: (R() - 0.5) * 0.12, pw: 2.4 + R() * 1.4, rot: (R() - 0.5) * 0.8 });
+      sp = b + gapA + R() * gapB;
+    }
+  };
+  if (pat === 'kohaku' || pat === 'sanke' || pat === 'showa') addSteps(2, 4, 0.15, 0.11, 0.04, 0.07, 0.2, 0.32, 0.045 + R() * 0.03);
+  if (pat === 'ochiba') addSteps(3, 5, 0.12, 0.09, 0.025, 0.05, 0.28, 0.4, 0.1);
+  const spots = [];
+  const addSpots = (n, s0, s1, thSpread, r0, r1) => { for (let k = 0; k < n; k++) spots.push({ s: lerp(s0, s1, R()), th: (R() - 0.5) * thSpread, r: lerp(r0, r1, R()) }); };
+  if (pat === 'sanke') addSpots(4 + Math.floor(R() * 4), 0.27, 0.84, 0.36, 0.018, 0.045);
+  if (pat === 'bekko') addSpots(6 + Math.floor(R() * 4), 0.26, 0.86, 0.42, 0.016, 0.04);
+  const utsuri = pat === 'showa' ? 0.44 : pat === 'utsuri' ? 0.5 : 0;
+  return (s, th) => {
+    const a = th * Math.PI * 2, d = Math.cos(a), sn = Math.sin(a);
+    const px = s * 3.1 + sd, py = d * 0.62, pz = sn * 0.62;
+    const n1 = fbm3(px, py, pz, 3, 11), n2 = fbm3(px * 2.3 + 5, py * 2.3, pz * 2.3, 3, 12);
+    const belly = smoothstep(-0.28, -0.7, d + n2 * 0.08);
+    const tone = 0.5 + 0.5 * fbm3(px * 0.6 + 3, py * 0.6, pz * 0.6, 2, 13);
+    const angDist = Math.min(th, 1 - th);            // 0 on the dorsal line
+    let hi = 0, sumi = 0;
+    const angS = th < 0.5 ? th : th - 1;            // signed angle from the dorsal line (+ right flank)
+    for (const p of patches) {
+      const cs = (p.a + p.b) * 0.5, ls = (p.b - p.a) * 0.5;
+      const ds = (s - cs) / ls, da = (angS - p.off - p.rot * (s - cs)) / p.wid;
+      const dist = Math.pow(Math.pow(Math.abs(ds), p.pw) + Math.pow(Math.abs(da), 2.3), 1 / p.pw);
+      hi = Math.max(hi, smoothstep(1.03, 0.97, dist + n1 * 0.42 + n2 * 0.16));
+    }
+    if (pat === 'kohaku' || pat === 'sanke' || pat === 'showa' || pat === 'ochiba') hi *= smoothstep(0.02, 0.042, s);   // white nose
+    if (pat === 'tancho') hi = smoothstep(1.02, 0.86, Math.hypot((s - 0.112) / 0.05, (angDist * 0.73) / 0.052) + n1 * 0.06);
+    if (pat === 'asagi') hi = Math.max(smoothstep(0.02, -0.3, d + n1 * 0.18) * smoothstep(0.1, 0.2, s), smoothstep(0.26, 0.2, s) * smoothstep(0.55, 0.15, d + n2 * 0.15) * smoothstep(0.03, 0.07, s) * 0.95);
+    for (const sp of spots) {
+      const dd = Math.hypot((s - sp.s), (Math.min(Math.abs(th - sp.th), Math.abs(th - 1 - sp.th), Math.abs(th + 1 - sp.th))) * 0.73) / sp.r;
+      sumi = Math.max(sumi, smoothstep(1.1, 0.8, dd + n2 * 0.25));
+    }
+    if (utsuri > 0) {
+      const u = 0.5 + 0.5 * fbm3(px * 1.2 + 9, py * 1.2, pz * 1.2, 4, 14);
+      let m = smoothstep(1 - utsuri - 0.05, 1 - utsuri + 0.05, u + 0.12 * smoothstep(0.1, -0.5, d)) * smoothstep(0.1, 0.2, s);
+      const vStripe = Math.abs(angDist - (0.21 - s) * 1.35);        // menware: V across the head
+      m = Math.max(m, smoothstep(0.045, 0.028, vStripe) * smoothstep(0.23, 0.2, s) * smoothstep(0.03, 0.06, s));
+      sumi = Math.max(sumi, m);
+    }
+    return [hi, sumi, tone, belly];
+  };
+}
+
+// ---------- koi shaders (patchMaterial injections) ----------
+const GLSL_KOI_SWIM = /* glsl */`
+attribute vec4 iSwim;   // phase, amp, bend, mouth
+attribute vec4 iMisc;   // fish index, girth, breath phase, dorsal flat
+varying float vFishId;
+float koiLatV(float s) { return iSwim.y * (0.05 + 0.95 * s * s) * sin(5.7 * s - iSwim.x) + iSwim.z * (s - 0.3) * (s - 0.3); }
+float koiSlopeV(float s) { return iSwim.y * (1.9 * s * sin(5.7 * s - iSwim.x) + (0.05 + 0.95 * s * s) * 5.7 * cos(5.7 * s - iSwim.x)) + 2.0 * iSwim.z * (s - 0.3); }
+vec3 koiBendN(vec3 n, float s) { float a = atan(koiSlopeV(s) / 0.78); float c = cos(a), si = sin(a); return vec3(n.x * c + n.z * si, n.y, -n.x * si + n.z * c); }
+`;
+const GLSL_KOI_BODY_VPARS = GLSL_KOI_SWIM + /* glsl */`
+attribute vec4 aBody;   // s, theta (0 dorsal .. 0.25 right .. 0.5 belly), part (0 body 1 lip 2 inner lip 3 throat 4 barbel), gill weight / depth
+varying vec3 vKB;
+`;
+const GLSL_KOI_BODY_NORMAL = /* glsl */`
+objectNormal = koiBendN(objectNormal, clamp(aBody.x, 0.0, 1.3));
+`;
+const GLSL_KOI_BODY_BEGIN = /* glsl */`
+{
+  vec3 p = transformed;
+  float s0 = aBody.x, part = aBody.z, m = iSwim.w;
+  if (part < 0.5) { float yc = ${KOI_MOUTH_Y.toFixed(4)} * smoothstep(0.12, 0.0, s0); p.y = yc + (p.y - yc) * iMisc.y; p.z *= iMisc.y; }
+  p += normal * aBody.w * step(part, 0.5) * (0.5 + 0.5 * sin(iMisc.z)) * 0.0032;
+  if (part > 0.5 && part < 3.5) {
+    vec2 c = vec2(${KOI_MOUTH_Y.toFixed(4)}, 0.0);
+    vec2 rel = p.yz - c;
+    float rad = length(rel);
+    vec2 dir = rad > 1e-6 ? rel / rad : vec2(0.0);
+    float target = part < 1.5 ? mix(0.0055, 0.0178, m) : part < 2.5 ? mix(0.0035, 0.0146, m) : rad * mix(1.0, 3.8 - aBody.w * 1.6, m);
+    p.yz = c + dir * target;
+    p.x += m * (part < 2.5 ? 0.044 : 0.032 * (1.0 - 0.6 * aBody.w));
+  }
+  if (part < 0.5) p.x += m * 0.044 * smoothstep(0.085, 0.0, s0);
+  if (part > 3.5) p.x += m * 0.038;
+  p.z += koiLatV(s0);
+  transformed = p;
+  vKB = vec3(s0, aBody.y, part);
+  vFishId = iMisc.x;
+}
+`;
+const GLSL_KOI_FPARS = /* glsl */`
+varying vec3 vKB;
+uniform sampler2D tKoiPal;
+uniform sampler2D tKoiPat;
+uniform sampler2D tKoiScale;
+varying float vFishId;
+float koiSparkleKeep = 0.0;
+vec4 kInfo = vec4(0.8, 0.25, 0.0, 0.0);
+vec4 kSc = vec4(0.5, 0.5, 0.0, 0.0);
+vec2 kScUV = vec2(0.0);
+float kGin = 0.0, kDoitsu = 0.0, kDoitsuM = 0.0, kScaleOn = 0.0;
+vec3 kGinTilt = vec3(0.0, 0.0, 1.0);
+vec4 kPal(float c) { return texelFetch(tKoiPal, ivec2(int(c), int(vFishId + 0.5)), 0); }
+vec2 kAtlas(vec2 st) {
+  vec2 tile = vec2(mod(vFishId, ${ATLAS_C}.0), floor(vFishId / ${ATLAS_C}.0));
+  st = clamp(st, vec2(0.5 / ${PAT_W}.0, 0.5 / ${PAT_H}.0), vec2(1.0 - 0.5 / ${PAT_W}.0, 1.0 - 0.5 / ${PAT_H}.0));
+  return (tile + st) / vec2(${ATLAS_C}.0, ${ATLAS_R}.0);
+}
+mat3 koiTBN(vec3 eye_pos, vec3 surf_norm, vec2 uv) {
+  vec3 q0 = dFdx(eye_pos), q1 = dFdy(eye_pos);
+  vec2 st0 = dFdx(uv), st1 = dFdy(uv);
+  vec3 N = surf_norm;
+  vec3 q1perp = cross(q1, N), q0perp = cross(N, q0);
+  vec3 T = q1perp * st0.x + q0perp * st1.x;
+  vec3 B = q1perp * st0.y + q0perp * st1.y;
+  float det = max(dot(T, T), dot(B, B));
+  float sc = det == 0.0 ? 0.0 : inversesqrt(det);
+  return mat3(T * sc, B * sc, N);
+}
+`;
+const GLSL_KOI_ALBEDO = /* glsl */`
+{
+  uwSelfId = vFishId;
+  float ks = clamp(vKB.x, 0.0, 1.0), kth = vKB.y, part = vKB.z;
+  vec4 pal0 = kPal(0.0), pal1 = kPal(1.0), pal2 = kPal(2.0), pal3 = kPal(3.0), flags = kPal(7.0);
+  kInfo = kPal(6.0);
+  kDoitsu = flags.y;
+  kScUV = vec2(ks * ${KOI_SC.U}, kth * ${KOI_SC.V}.0);
+  kSc = texture2D(tKoiScale, kScUV);
+  kScaleOn = smoothstep(0.215, 0.26, ks) * (1.0 - kDoitsu) * step(part, 0.5);
+  // owning scale -> its centre in body coordinates (kiwa quantisation)
+  float idx = floor(texelFetch(tKoiScale, ivec2(fract(kScUV) * 512.0), 0).b * ${KOI_SC.C * KOI_SC.R}.0);
+  float colI = mod(idx, ${KOI_SC.C}.0), rowI = floor(idx / ${KOI_SC.C}.0);
+  vec2 cf = vec2((colI + 0.5) / ${KOI_SC.C}.0, (rowI + 0.5 + 0.5 * mod(colI, 2.0)) / ${KOI_SC.R}.0);
+  vec2 dd = cf - fract(kScUV); dd -= floor(dd + 0.5);
+  vec2 centre = kScUV + dd;
+  vec2 cst = vec2(centre.x / ${KOI_SC.U}, fract(centre.y / ${KOI_SC.V}.0));
+  vec2 cid = floor(centre * vec2(${KOI_SC.C}.0, ${KOI_SC.R}.0) + 0.5);
+  float sr = hsh12(cid + vFishId * 7.13);
+  vec4 pc = texture2D(tKoiPat, kAtlas(vec2(ks, kth)));
+  vec4 pq = texture2D(tKoiPat, kAtlas(cst));
+  float dRds = texture2D(tKoiPat, kAtlas(vec2(ks + 0.012, kth))).r - texture2D(tKoiPat, kAtlas(vec2(ks - 0.012, kth))).r;
+  float front = smoothstep(0.0, 0.3, dRds) * kScaleOn;
+  float hiK = mix(smoothstep(0.44, 0.56, pc.r), step(0.5, pq.r), kScaleOn);   // kiwa: crisp, scale by scale
+  float hiS = smoothstep(0.2, 0.8, pc.r);                                     // sashi: soft, seen through scales
+  float hi = mix(hiK, hiS, front);
+  float sumiC = smoothstep(0.38, 0.62, pc.g);
+  float sumiQ = mix(sumiC, mix(sumiC, step(0.5, pq.g), 0.3) * (0.9 + 0.1 * sr), kScaleOn);
+  float dors = cos(kth * 6.2831853);
+  vec3 col = pal0.rgb * (0.9 + 0.2 * (pc.b - 0.5));
+  col = mix(col, pal3.rgb, pc.a);
+  float white = smoothstep(0.5, 0.75, dot(col, vec3(0.333)));
+  col = mix(col, col * vec3(0.88, 0.94, 1.07), white * (1.0 - kSc.a) * 0.5 * kScaleOn);   // faint blue scale pockets
+  col = mix(col, pal1.rgb * (0.97 + 0.05 * sr), hi);
+  col = mix(col, mix(pal0.rgb, pal1.rgb, 0.5) * vec3(1.0, 0.92, 0.92), front * smoothstep(0.08, 0.45, pc.r) * (1.0 - hi) * 0.55);
+  col = mix(col, pal2.rgb * (1.0 + 0.8 * kSc.a * kScaleOn), sumiQ);
+  float ret = flags.z;
+  float rim = kSc.a * kScaleOn;
+  if (ret > 0.5) {
+    if (ret < 1.5) col = mix(col, vec3(0.5, 0.6, 0.72), rim * 0.8 * (1.0 - pc.a) * (1.0 - hi));
+    else if (ret < 2.5) col = mix(col, pal2.rgb, (1.0 - kSc.a) * kScaleOn * 0.8 * smoothstep(-0.2, 0.4, dors));
+    else if (ret < 3.5) col = mix(col, col * 1.7 + vec3(0.02, 0.012, 0.004), rim * 0.75);
+    else if (ret < 4.5) col = mix(col, pal2.rgb, rim * 0.72 * (1.0 - pc.a));
+    else col = mix(col, col * 1.4 + 0.01, rim * 0.5);
+  }
+  // doitsu: leather skin, mirror scales beside the dorsal ridge and along the lateral line
+  if (kDoitsu > 0.5) {
+    float ang = min(kth, 1.0 - kth);
+    float i1 = floor((ks - 0.24) * 15.0);
+    float sc1 = 0.24 + (i1 + 0.5) / 15.0;
+    float rowD = min(abs(ang - 0.05), abs(ang - 0.25));
+    float e = length(vec2((ks - sc1) / 0.029, rowD / 0.034));
+    kDoitsuM = smoothstep(1.0, 0.85, e) * step(0.24, ks) * step(ks, 0.9) * step(0.0, i1);
+    col = mix(col, col * 1.12 + 0.02, kDoitsuM);
+  }
+  // lateral line, nostrils, gill slit, lips and mouth
+  float llD = abs(abs(kth - 0.5) - 0.25 + 0.012 * sin(ks * 7.0));
+  float ll = smoothstep(0.0045, 0.0, llD) * smoothstep(0.24, 0.3, ks) * smoothstep(0.97, 0.9, ks);
+  col *= 1.0 - ll * smoothstep(0.3, 0.0, abs(fract(kScUV.x * ${KOI_SC.C}.0) - 0.6)) * 0.45;
+  float nos = exp(-dot(vec2((ks - 0.036) / 0.0075, min(abs(kth - 0.105), abs(kth - 0.895)) / 0.016), vec2((ks - 0.036) / 0.0075, min(abs(kth - 0.105), abs(kth - 0.895)) / 0.016)));
+  col *= 1.0 - 0.8 * nos;
+  col *= 1.0 - 0.45 * exp(-pow((ks - 0.237) / 0.0032, 2.0)) * smoothstep(0.1, 0.35, abs(sin(kth * 6.2831853)));
+  col = mix(col, col * vec3(1.05, 0.9, 0.88) + vec3(0.06, 0.02, 0.02), smoothstep(0.022, 0.004, ks) * step(part, 0.5));
+  if (part > 0.5 && part < 3.5) col = part < 1.5 ? vec3(0.62, 0.36, 0.34) : mix(vec3(0.5, 0.2, 0.2), vec3(0.2, 0.05, 0.06), step(2.5, part));
+  if (part > 3.5) col = mix(pal0.rgb, pal3.rgb, 0.5) * vec3(0.95, 0.85, 0.8);
+  // gin rin: a third of the scales are tilted mirrors
+  kGin = flags.x * step(hsh12(cid * 1.37 + vFishId), 0.35) * kScaleOn * smoothstep(-0.5, 0.1, dors);
+  kGinTilt = normalize(vec3(hsh12(cid + 3.1) - 0.5, hsh12(cid + 5.7) - 0.5, 1.6));
+  col = mix(col, col * 1.25 + vec3(0.07), kGin * 0.55);   // multilayer guanine: pearly even off the flash angle
+  koiSparkleKeep = max(kGin * 0.9 + kDoitsuM * 0.85, kInfo.z * 0.92);   // guanine mirrors sit under the skin: they keep reflecting underwater
+  diffuseColor.rgb = col;
+}
+`;
+const GLSL_KOI_ROUGH = /* glsl */`
+roughnessFactor = mix(0.44, 0.3, kSc.a * kScaleOn);
+roughnessFactor = mix(roughnessFactor, 0.13, kGin);
+if (kDoitsu > 0.5) roughnessFactor = mix(0.5, 0.16, kDoitsuM);
+if (vKB.z > 0.5 && vKB.z < 3.5) roughnessFactor = 0.35;
+`;
+const GLSL_KOI_METAL = /* glsl */`
+metalnessFactor = kInfo.z * (0.86 + 0.14 * kSc.a);
+metalnessFactor = max(metalnessFactor, kGin * 0.92);
+metalnessFactor = max(metalnessFactor, kDoitsuM * 0.8);
+if (vKB.z > 0.5) metalnessFactor = 0.0;
+`;
+const GLSL_KOI_NORMAL = /* glsl */`
+{
+  mat3 tbn = koiTBN(-vViewPosition, normal, kScUV);
+  vec2 sxy = (kSc.xy * 2.0 - 1.0) * 0.6 * kScaleOn;
+  sxy += kGin * kGinTilt.xy * 0.6;
+  if (kDoitsu > 0.5) {
+    sxy += (vec2(fbmz(kScUV * 13.0), fbmz(kScUV * 13.0 + 5.0)) - 0.5) * 0.12 * (1.0 - kDoitsuM);
+  }
+  vec3 sn = normalize(vec3(sxy, 1.0));
+  normal = normalize(tbn * sn);
+}
+`;
+const GLSL_KOI_PRELIGHT = /* glsl */`
+#ifdef USE_CLEARCOAT
+  material.clearcoat = kInfo.x;
+#endif
+#ifdef USE_IRIDESCENCE
+  material.iridescence = clamp(kInfo.y + kGin * 0.3, 0.0, 1.0);
+#endif
+`;
+const GLSL_KOI_WRAP = /* glsl */`
+{
+  float ndl = dot(geometryNormal, directLight.direction);
+  float wrapT = max((ndl + 0.55) / 1.55, 0.0) - max(ndl, 0.0);
+  reflectedLight.directDiffuse += directLight.color * max(wrapT, 0.0) * material.diffuseColor * vec3(1.0, 0.52, 0.36) * 0.6;
+}
+`;
+// fins
+const GLSL_KOI_FIN_VPARS = GLSL_KOI_SWIM + /* glsl */`
+attribute vec4 aFin;
+attribute vec3 aHinge;
+attribute vec4 iFin;    // flare, scull phase, butterfly, scull amplitude
+varying vec4 vFin;
+mat3 rotAxis(vec3 a, float g) { float c = cos(g), s = sin(g), t = 1.0 - c; return mat3(t*a.x*a.x + c, t*a.x*a.y + s*a.z, t*a.x*a.z - s*a.y, t*a.x*a.y - s*a.z, t*a.y*a.y + c, t*a.y*a.z + s*a.x, t*a.x*a.z + s*a.y, t*a.y*a.z - s*a.x, t*a.z*a.z + c); }
+`;
+const GLSL_KOI_FIN_BEGIN = /* glsl */`
+{
+  vec3 p = transformed, h = aHinge, r = p - h;
+  float type = aFin.x, u = aFin.y, v = aFin.z, side = aFin.w, bf = iFin.z;
+  if (type < 0.5) {
+    float k = mix(1.0, 0.14, iMisc.w);
+    float L = length(r);
+    r = vec3(r.x - (1.0 - k) * L * 0.9, r.y * k, r.z);
+    r *= mix(1.0, 1.3, bf);
+    r.z += sin(uTime * 2.2 - v * 6.0 + iSwim.x * 0.5) * 0.004 * u;
+  } else if (type < 1.5) {
+    r.x *= mix(1.0, 2.0, bf); r.y *= mix(1.0, 1.7, bf);
+    r.z += bf * sin(uTime * 1.9 - u * 3.2 + v * 1.5) * 0.04 * u * u;
+    r.y *= 1.0 - 0.14 * clamp(iSwim.y * 5.0, 0.0, 1.0);
+  } else if (type < 2.5) {
+    r *= mix(1.0, 1.5, bf);
+  } else {
+    bool pect = type < 3.5;
+    r *= mix(1.0, 1.9, bf);
+    float ang = -side * (pect ? mix(0.12, 1.05, iFin.x) : mix(0.08, 0.55, iFin.x));
+    ang += -side * sin(iFin.y + v * 1.3) * iFin.w * (pect ? 0.34 : 0.2);
+    r = rotAxis(normalize(vec3(1.0, 0.25, 0.0)), ang) * r;
+    r = rotAxis(vec3(0.0, 1.0, 0.0), side * sin(iFin.y + 1.1) * iFin.w * (pect ? 0.24 : 0.14)) * r;
+    r.y += bf * sin(uTime * 1.6 - u * 3.0 + side) * 0.03 * u * u;
+  }
+  p = h + r;
+  float sA = (type > 0.5 && type < 1.5) ? (0.5 - p.x) / 0.78 : (0.5 - h.x) / 0.78;
+  p.z += koiLatV(sA);
+  transformed = p;
+  vFin = aFin;
+  vFishId = iMisc.x;
+}
+`;
+const GLSL_KOI_FIN_FPARS = /* glsl */`
+uniform sampler2D tKoiPal;
+uniform sampler2D tFin;
+varying float vFishId;
+varying vec4 vFin;
+vec4 kPal(float c) { return texelFetch(tKoiPal, ivec2(int(c), int(vFishId + 0.5)), 0); }
+`;
+const GLSL_KOI_FIN_ALBEDO = /* glsl */`
+{
+  uwSelfId = vFishId;
+  float type = vFin.x, u = vFin.y;
+  bool caud = type > 0.5 && type < 1.5;
+  float vv = caud ? vFin.z * 0.5 + 0.5 : vFin.z;
+  vec4 ft = texture2D(tFin, vec2(u, vv * (caud ? 1.7 : (type < 0.5 ? 1.3 : 0.8))));
+  vec4 fc = kPal(4.0), fb = kPal(5.0), flags = kPal(7.0);
+  vec3 col = mix(fb.rgb, fc.rgb, smoothstep(0.0, type > 2.5 ? 0.35 : 0.15, u));
+  float haj = mod(flags.w, 2.0);
+  float tej = step(1.5, flags.w);
+  if (haj > 0.5) col = mix(col, vec3(0.85, 0.85, 0.83), smoothstep(0.55, 0.85, u) * ((type > 2.5 || caud) ? 1.0 : 0.25));
+  if (tej > 0.5 && type > 2.5) col = mix(col, vec3(0.008), smoothstep(0.5, 0.8, sin(u * 18.0 + vv * 3.0) * 0.5 + 0.5) * smoothstep(0.15, 0.3, u) * smoothstep(0.9, 0.7, u) * 0.85);
+  col *= 0.8 + 0.28 * ft.r * ft.g;
+  diffuseColor.rgb = col;
+  float edge = smoothstep(1.0, 0.84 + 0.12 * ft.b, u);
+  diffuseColor.a = mix(0.62, 0.95, ft.r) * edge * (type < 0.5 ? 0.95 : 1.0);
+}
+`;
+const GLSL_KOI_FIN_LIGHT = /* glsl */`
+{
+  float bl = saturate(-dot(geometryNormal, directLight.direction));
+  reflectedLight.directDiffuse += directLight.color * bl * diffuseColor.rgb * 0.65;
+}
+`;
+// eyes
+const GLSL_KOI_EYE_VPARS = GLSL_KOI_SWIM + /* glsl */`
+attribute vec4 aEye;
+attribute vec4 iLook;
+varying vec3 vEyeN;
+varying vec3 vEyeAxis;
+`;
+const GLSL_KOI_EYE_BEGIN = /* glsl */`
+{
+  vec3 p = transformed;
+  vEyeN = normalize(p - aEye.yzw);
+  float side = aEye.x;
+  vec3 ax = normalize(vec3(0.32, 0.4, side * 0.86));
+  float cy = cos(iLook.x), sy = sin(iLook.x);
+  ax = vec3(ax.x * cy + ax.z * sy, ax.y, -ax.x * sy + ax.z * cy);
+  float cp = cos(iLook.y), sp = sin(iLook.y);
+  ax = vec3(ax.x * cp - ax.y * sp, ax.x * sp + ax.y * cp, ax.z);
+  vEyeAxis = ax;
+  p.z += koiLatV(0.105);
+  transformed = p;
+  vFishId = iMisc.x;
+}
+`;
+const GLSL_KOI_EYE_FPARS = /* glsl */`
+varying vec3 vEyeN;
+varying vec3 vEyeAxis;
+varying float vFishId;
+`;
+const GLSL_KOI_EYE_ALBEDO = /* glsl */`
+{
+  uwSelfId = vFishId;
+  float d = dot(normalize(vEyeN), normalize(vEyeAxis));
+  vec3 col = vec3(0.035, 0.03, 0.028);
+  float ang = atan(vEyeN.y, vEyeN.z);
+  vec3 irisC = mix(vec3(0.34, 0.2, 0.05), vec3(0.72, 0.52, 0.2), smoothstep(0.78, 0.9, d)) * (0.8 + 0.3 * sin(ang * 23.0));
+  col = mix(col, irisC, smoothstep(0.7, 0.745, d));
+  col = mix(col, vec3(0.002), smoothstep(0.895, 0.91, d));
+  diffuseColor.rgb = col;
+}
+`;
+
+// ---------- koi system: build, behaviour, instancing ----------
+const FISH = [];
+const OBSTACLES = [];      // extra circles koi avoid: {x, z, r, top, bottom}
+let koiBody, koiFins, koiEyes, koiMat, koiFinMat, koiEyeMat;
+const KA = {};             // shared instanced attributes
+function buildKoi() {
+  makeKoiScaleTexture();
+  makeFinTexture();
+  const N = MAX_KOI;
+  // palette 8 x N floats and the pattern atlas
+  const pal = new Float32Array(8 * N * 4);
+  const atlasW = PAT_W * ATLAS_C, atlasH = PAT_H * ATLAS_R;
+  const atlas = new Uint8Array(atlasW * atlasH * 4);
+  ROSTER.forEach((row, i) => {
+    const [variety, size, extra] = row;
+    const v = VARIETIES[variety];
+    const R = mulberry32(4242 + i * 97);
+    const f = {
+      i, variety, v, size, extra, seed: 17 + i * 131,
+      girth: lerp(0.96, 1.05, R()) + (size - 0.46) * 0.5,
+      pos: new THREE.Vector3(), heading: R() * Math.PI * 2, pitch: 0, roll: 0, hRate: 0, speed: 0,
+      phase: R() * 6, amp: 0.05, bend: 0, mouth: 0, breath: R() * 6, dorsalFlat: 0, flare: 0.4, scullPh: R() * 6, scull: 0,
+      eyeYaw: 0, eyePitch: 0, gazeT: R(), gazeY: 0, gazeP: 0,
+      mode: 'beat', modeT: R() * 2, beats: 0, lastPhase: 0, thrust: 0.4, wander: R() * Math.PI * 2, wanderRate: 0,
+      surfaceT: 20 + R() * 70, gulpT: 2 + R() * 6, gulpA: 0, wakeT: 0,
+      depthPref: size > 0.6 ? lerp(0.55, 0.85, R()) : size < 0.3 ? lerp(0.12, 0.35, R()) : lerp(0.3, 0.62, R()),
+      bold: R(), vel: new THREE.Vector3(), prev: new THREE.Vector3(), pose: null, burst: 0,
+    };
+    // palette with a small per-fish hue/saturation/lightness jitter
+    const cols = [v.base, v.hi, v.sumi, v.belly, v.fin, v.finBase].map((c, k) => (k === 2 ? c : jitterColour(c, R)));
+    const info = [v.cc + (R() - 0.5) * 0.1, v.ir, v.met, v.butterfly ? 1 : 0];
+    const flags = [extra.ginrin ? 1 : 0, v.doitsu ? 1 : 0, v.retic || 0, (v.hajiro ? 1 : 0) + (v.tejima ? 2 : 0)];
+    [...cols.map((c) => [c[0], c[1], c[2], 1]), info, flags].forEach((c, k) => pal.set(c, (i * 8 + k) * 4));
+    // pattern tile (256 x 128) sampled on the body cylinder
+    const fn = koiPatternFn(f);
+    const tx = (i % ATLAS_C) * PAT_W, ty = Math.floor(i / ATLAS_C) * PAT_H;
+    for (let y = 0; y < PAT_H; y++) for (let x = 0; x < PAT_W; x++) {
+      const r = fn((x + 0.5) / PAT_W, (y + 0.5) / PAT_H);
+      const o = ((ty + y) * atlasW + tx + x) * 4;
+      atlas[o] = clamp(r[0], 0, 1) * 255; atlas[o + 1] = clamp(r[1], 0, 1) * 255; atlas[o + 2] = clamp(r[2], 0, 1) * 255; atlas[o + 3] = clamp(r[3], 0, 1) * 255;
+    }
+    spawnFish(f);
+    FISH.push(f);
+  });
+  TEX.koiPal = dataTex(pal, 8, N, { type: THREE.FloatType, mips: false, wrap: THREE.ClampToEdgeWrapping, mag: THREE.NearestFilter, min: THREE.NearestFilter, aniso: 1 });
+  TEX.koiPat = dataTex(atlas, atlasW, atlasH, { mips: false, wrap: THREE.ClampToEdgeWrapping, aniso: 4 });
+  // shared per-instance attributes
+  const mk = (n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(N * n), n); a.setUsage(THREE.DynamicDrawUsage); return a; };
+  KA.swim = mk(4); KA.misc = mk(4); KA.fin = mk(4); KA.look = mk(4);
+  const U = { tKoiPal: { value: TEX.koiPal }, tKoiPat: { value: TEX.koiPat }, tKoiScale: { value: TEX.koiScale }, tFin: { value: TEX.fin } };
+  // body
+  const bg = buildKoiBodyGeometry();
+  bg.setAttribute('iSwim', KA.swim); bg.setAttribute('iMisc', KA.misc);
+  koiMat = patchMaterial(new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, roughness: 0.42, metalness: 0, clearcoat: 0.8, clearcoatRoughness: 0.09,
+    sheen: 0.35, sheenRoughness: 0.4, sheenColor: new THREE.Color(0.85, 0.88, 1.0),
+    iridescence: 0.3, iridescenceIOR: 1.62, iridescenceThicknessRange: [220, 480], envMapIntensity: 1.0,
+  }), {
+    key: 'koi', noWeather: true, extraUniforms: U, defines: { KOI_SPARKLE: '' },
+    vertPars: GLSL_KOI_BODY_VPARS, vertBegin: GLSL_KOI_BODY_BEGIN, vertNormal: GLSL_KOI_BODY_NORMAL,
+    fragPars: GLSL_KOI_FPARS, albedo: GLSL_KOI_ALBEDO, roughness: GLSL_KOI_ROUGH, metal: GLSL_KOI_METAL, normal: GLSL_KOI_NORMAL,
+    preLights: GLSL_KOI_PRELIGHT, lightExtra: GLSL_KOI_WRAP,
+    fragVaryings: 'varying vec3 vKB;\n',
+  });
+  koiBody = new THREE.InstancedMesh(bg, koiMat, N);
+  // fins
+  const fg = buildKoiFinGeometry();
+  fg.setAttribute('iSwim', KA.swim); fg.setAttribute('iMisc', KA.misc); fg.setAttribute('iFin', KA.fin);
+  koiFinMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0, transparent: true, side: THREE.DoubleSide, depthWrite: false, flatShading: true }), {
+    key: 'koifin', noWeather: true, extraUniforms: U, defines: { KEEP_ALPHA: '' },
+    vertPars: GLSL_KOI_FIN_VPARS, vertBegin: GLSL_KOI_FIN_BEGIN, fragPars: GLSL_KOI_FIN_FPARS, albedo: GLSL_KOI_FIN_ALBEDO, lightExtra: GLSL_KOI_FIN_LIGHT,
+  });
+  koiFins = new THREE.InstancedMesh(fg, koiFinMat, N);
+  koiFins.renderOrder = 2;
+  // eyes
+  const eg = buildKoiEyeGeometry();
+  eg.setAttribute('iSwim', KA.swim); eg.setAttribute('iMisc', KA.misc); eg.setAttribute('iLook', KA.look);
+  koiEyeMat = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03 }), {
+    key: 'koieye', noWeather: true, vertPars: GLSL_KOI_EYE_VPARS, vertBegin: GLSL_KOI_EYE_BEGIN, fragPars: GLSL_KOI_EYE_FPARS, albedo: GLSL_KOI_EYE_ALBEDO,
+  });
+  koiEyes = new THREE.InstancedMesh(eg, koiEyeMat, N);
+  for (const m of [koiBody, koiFins, koiEyes]) {
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.castShadow = false; m.receiveShadow = true; m.frustumCulled = false;
+    m.layers.set(LAYER.UNDER);
+    scene.add(m);
+  }
+  updateKoi(0);
+}
+function spawnFish(f) {
+  let x, z, tries = 0;
+  do { x = rr(-5.2, 5.6); z = rr(-4.2, 3.6); tries++; } while ((pondSDF(x, z) > -0.9 || floorHeight(x, z) > -0.55) && tries < 500);
+  f.pos.set(x, lerp(-0.3, floorHeight(x, z) + 0.2, 0.5), z);
+  f.prev.copy(f.pos);
+}
+// the whole fish stays under the lowest wave trough
+function koiCapY(f) {
+  const trough = WATER_Y - waveAmpSum() - 0.012;
+  const upper = f.size * (0.116 + 0.088 * (1 - f.dorsalFlat)) * f.girth;
+  return trough - upper - Math.abs(Math.sin(f.pitch)) * 0.52 * f.size - Math.abs(Math.sin(f.roll)) * 0.1 * f.size;
+}
+function koiFloorY(f, x, z) { return floorHeight(x, z) + f.size * 0.1 * f.girth + 0.025 + Math.abs(Math.sin(f.pitch)) * 0.4 * f.size; }
+const _kv = new THREE.Vector3(), _kg = new THREE.Vector2(), _km = new THREE.Matrix4(), _ke = new THREE.Euler(), _kq = new THREE.Quaternion(), _ks = new THREE.Vector3();
+const koiCtl = { pose: false, attract: null, inspect: false, activity: 1 };
+function chooseKoiMode(f) {
+  const act = env.koi;
+  const r = Math.random();
+  if (f.mode === 'hover' || f.mode === 'glide') { f.mode = 'beat'; f.beats = 0; f.beatN = 2 + Math.floor(Math.random() * 3); f.thrust = (0.35 + 0.4 * Math.random()) * (0.45 + 0.55 * act); f.modeT = 6; return; }
+  if (f.mode === 'beat') {
+    if (r < 0.06 * act + 0.04) { f.mode = 'hover'; f.modeT = 2.5 + Math.random() * 4.5; f.thrust = 0.03; return; }
+    f.mode = 'glide'; f.modeT = (0.9 + Math.random() * 1.8) / (0.6 + 0.4 * act); f.thrust = 0; return;
+  }
+  f.mode = 'beat'; f.modeT = 6;
+}
+function updateKoi(dt) {
+  const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
+  const act = env.koi;
+  const t = clock.t;
+  dt = Math.min(dt, 0.05);
+  const camUnder = camState.under;
+  for (let k = 0; k < n && dt > 0; k++) {
+    const f = FISH[k];
+    if (f.pose) continue;
+    f.prev.copy(f.pos);
+    // ---- mode machine: burst-and-glide with hover episodes ----
+    f.modeT -= dt;
+    if (f.mode === 'beat') {
+      const cyc = Math.floor(f.phase / (Math.PI * 2));
+      if (cyc !== f.lastCycle) { f.beats++; f.lastCycle = cyc; }
+      if (f.beats >= (f.beatN || 3) || f.modeT <= 0) chooseKoiMode(f);
+    } else if (f.modeT <= 0) chooseKoiMode(f);
+    const L = f.size;
+    const fx = Math.cos(f.heading), fz = -Math.sin(f.heading);
+    // ---- steering (xz) ----
+    let sx = fx * 1.2, sz = fz * 1.2;
+    f.wanderRate += (Math.random() - 0.5) * 2.2 * dt - f.wanderRate * 0.6 * dt;
+    f.wander += f.wanderRate * dt;
+    sx += Math.cos(f.wander) * 0.55; sz += -Math.sin(f.wander) * 0.55;
+    // soft boundary from the SDF gradient, looking ahead; shallow water counts as wall
+    const cap = koiCapY(f);
+    const look = L * 1.3 + f.speed * 1.4 + 0.25;
+    for (const la of [look * 0.45, look]) {
+      const qx = f.pos.x + fx * la, qz = f.pos.z + fz * la;
+      const sd = pondSDF(qx, qz);
+      const depthNeed = koiFloorY(f, qx, qz) - cap + 0.04;
+      const margin = 0.35 + L * 0.6;
+      const w = Math.max((sd + margin) / margin, depthNeed > 0 ? 0.6 + depthNeed * 6 : 0);
+      if (w > 0) {
+        pondSDFGrad(qx, qz, _kg);
+        if (depthNeed > 0 && sd < -0.6) { const e = 0.25; _kg.set(floorHeight(qx + e, qz) - floorHeight(qx - e, qz), floorHeight(qx, qz + e) - floorHeight(qx, qz - e)).normalize(); }
+        sx -= _kg.x * w * 3.2; sz -= _kg.y * w * 3.2;
+        // slide along the wall rather than stopping
+        const tx = -_kg.y, tz = _kg.x, sgn = tx * fx + tz * fz >= 0 ? 1 : -1;
+        sx += tx * sgn * w * 1.2; sz += tz * sgn * w * 1.2;
+      }
+    }
+    // rocks, piers, turtle
+    for (const ob of ROCKS.concat(OBSTACLES)) {
+      if (ob.top < f.pos.y - L * 0.15 || ob.bottom > f.pos.y + L * 0.12) continue;
+      const dx = f.pos.x + fx * look * 0.6 - ob.x, dz = f.pos.z + fz * look * 0.6 - ob.z;
+      const d = Math.hypot(dx, dz), R = ob.r + L * 0.55 + 0.12;
+      if (d < R) { const w = (R - d) / R * 3.5; sx += (dx / (d || 1)) * w; sz += (dz / (d || 1)) * w; }
+    }
+    // boids: separation, alignment, cohesion
+    let ax = 0, az = 0, cx = 0, cz = 0, cn = 0;
+    for (let j = 0; j < n; j++) {
+      if (j === k) continue;
+      const g = FISH[j];
+      const dx = f.pos.x - g.pos.x, dz = f.pos.z - g.pos.z, dy = (f.pos.y - g.pos.y) * 1.8;
+      const d = Math.hypot(dx, dz, dy);
+      const sep = (L + g.size) * 0.75;
+      if (d < sep * 1.6) { const w = (1 - d / (sep * 1.6)) * 2.6; sx += (dx / (d || 1)) * w; sz += (dz / (d || 1)) * w; }
+      if (d < 2.2) { ax += Math.cos(g.heading); az += -Math.sin(g.heading); }
+      if (d < 3.5) { cx += g.pos.x; cz += g.pos.z; cn++; }
+    }
+    sx += ax * 0.12; sz += az * 0.12;
+    if (cn) { sx += (cx / cn - f.pos.x) * 0.05; sz += (cz / cn - f.pos.z) * 0.05; }
+    // attraction (feeding, stroke, curious inspection)
+    if (koiCtl.attract && f.attractW) { const a = koiCtl.attract(f); if (a) { sx += a.x * f.attractW; sz += a.z * f.attractW; } }
+    if (camUnder && f.bold > 0.55 && !koiCtl.attract) {
+      const dx = camera.position.x - f.pos.x, dz = camera.position.z - f.pos.z, d = Math.hypot(dx, dz);
+      if (d < 4 && d > 0.7) { sx += (dx / d) * 0.9 * (f.bold - 0.5); sz += (dz / d) * 0.9 * (f.bold - 0.5); }
+      if (d < 1.2) { f.gazeY = clamp(wrapAngle(Math.atan2(-dz, dx) - f.heading), -0.4, 0.4); if (f.mode === 'beat' && Math.random() < 0.02) { f.mode = 'hover'; f.modeT = 2 + Math.random() * 3; f.thrust = 0.03; } }
+    }
+    // ---- rate-limited turning with angular acceleration ----
+    const want = Math.atan2(-sz, sx);
+    const dh = wrapAngle(want - f.heading);
+    const maxRate = (f.mode === 'hover' ? 1.2 : 0.95) * (0.5 + 0.5 * act) * (1.25 - 0.4 * clamp(L, 0.2, 0.75));
+    const wantRate = clamp(dh * 1.6, -maxRate, maxRate);
+    const angAcc = 2.2 * (0.5 + 0.5 * act);
+    f.hRate += clamp(wantRate - f.hRate, -angAcc * dt, angAcc * dt);
+    f.heading = wrapAngle(f.heading + f.hRate * dt);
+    f.bend = lerp(f.bend, clamp(f.hRate * 0.11, -0.22, 0.22), 1 - Math.exp(-5 * dt));
+    f.roll = lerp(f.roll, clamp(-f.hRate * 0.1, -0.15, 0.15), 1 - Math.exp(-3 * dt));
+    // ---- speed: thrust with drag ----
+    const accel = L * 1.3 * (0.5 + 0.5 * act) * (koiCtl.speedMul || 1);
+    const drag = f.mode === 'hover' ? 2.2 : 0.62;
+    f.speed += (f.thrust * accel * (f.mode === 'beat' ? 1 : 0) - drag * f.speed) * dt;
+    f.speed = clamp(f.speed, 0, L * 2.4);
+    // ---- depth preference bounded by floor and the wave troughs ----
+    f.surfaceT -= dt * act;
+    let surfacing = false;
+    if (f.surfaceT < 0) { surfacing = true; if (f.surfaceT < -9) f.surfaceT = 30 + Math.random() * 80; }
+    const floorY = koiFloorY(f, f.pos.x, f.pos.z);
+    let ty = surfacing || f.forceSurface ? cap : lerp(cap, floorY, f.depthPref * (0.6 + 0.4 * (1 - 0.6 * (1 - act))));
+    ty = clamp(ty, Math.min(floorY, cap), cap);
+    f.pitch = lerp(f.pitch, clamp((ty - f.pos.y) * 2.4, -0.32, 0.32) * clamp(f.speed / (L * 0.3), 0.3, 1), 1 - Math.exp(-2.2 * dt));
+    // ---- integrate ----
+    const cp = Math.cos(f.pitch);
+    f.pos.x += Math.cos(f.heading) * cp * f.speed * dt;
+    f.pos.z += -Math.sin(f.heading) * cp * f.speed * dt;
+    f.pos.y += Math.sin(f.pitch) * f.speed * dt + (ty - f.pos.y) * 0.35 * dt;
+    // hard bounds: inside the pond, above the floor, below the troughs
+    const sdN = pondSDF(f.pos.x, f.pos.z);
+    if (sdN > -L * 0.32) { pondSDFGrad(f.pos.x, f.pos.z, _kg); const push = sdN + L * 0.32; f.pos.x -= _kg.x * push; f.pos.z -= _kg.y * push; }
+    keepKoiInDepth(f);
+    // ---- swimming animation: tail beat frequency scales with sqrt(0.46 / size) ----
+    const thrustVis = f.mode === 'beat' ? f.thrust : f.mode === 'hover' ? 0.06 : 0.0;
+    const freq = (0.9 + 1.9 * thrustVis) * Math.sqrt(0.46 / L) * (0.6 + 0.4 * act);
+    f.phase = (f.phase + Math.PI * 2 * freq * dt);
+    if (f.phase > 1000) { f.phase -= Math.PI * 2 * 150; f.lastCycle = Math.floor(f.phase / (Math.PI * 2)); }
+    const tAmp = f.mode === 'beat' ? 0.045 + 0.085 * f.thrust : f.mode === 'hover' ? 0.018 : 0.012 + 0.02 * clamp(f.speed / L, 0, 1);
+    f.amp = lerp(f.amp, tAmp, 1 - Math.exp(-4 * dt));
+    // pectorals: flared and sculling when slow, folded back when fast
+    const bl = f.speed / L;
+    f.flare = lerp(f.flare, clamp(1.1 - bl * 1.3, 0.05, 1) * (f.mode === 'hover' ? 1 : 0.85), 1 - Math.exp(-3 * dt));
+    f.scull = lerp(f.scull, f.mode === 'hover' ? 1 : clamp(0.6 - bl, 0, 0.6), 1 - Math.exp(-2 * dt));
+    f.scullPh += Math.PI * 2 * 1.35 * dt;
+    f.breath += Math.PI * 2 * (0.8 + 0.4 * f.burst) * dt;
+    // mouth: slow gulps, bigger at the surface
+    f.gulpT -= dt;
+    if (f.gulpT < 0) { f.gulpA = 1; f.gulpT = 3 + Math.random() * 6; }
+    if (f.gulpA > 0) { f.gulpA = Math.max(0, f.gulpA - dt / 1.1); }
+    const gulp = Math.sin((1 - f.gulpA) * Math.PI) * (f.gulpA > 0 ? 1 : 0);
+    const atSurface = koiCapY(f) - f.pos.y < 0.03;
+    f.mouth = lerp(f.mouth, Math.max(gulp * (atSurface ? 1 : 0.32), f.mouthForce || 0), 1 - Math.exp(-10 * dt));
+    if (atSurface && gulp > 0.9 && !f.gulped) { f.gulped = true; const mx = f.pos.x + Math.cos(f.heading) * L * 0.5, mz = f.pos.z - Math.sin(f.heading) * L * 0.5; addDrop(mx, mz, 0.03 + L * 0.03, -0.004); }
+    if (gulp < 0.2) f.gulped = false;
+    // wakes when the back is close to the surface
+    f.wakeT -= dt;
+    if (atSurface && f.speed > 0.06 && f.wakeT < 0) { f.wakeT = 0.12; addDrop(f.pos.x, f.pos.z, 0.035 + L * 0.05, -0.0012 * clamp(f.speed / 0.3, 0.3, 1.5)); }
+    // eye saccades
+    f.gazeT -= dt;
+    if (f.gazeT < 0) { f.gazeT = 0.4 + Math.random() * 1.6; f.gazeY = (Math.random() - 0.5) * 0.5; f.gazeP = (Math.random() - 0.5) * 0.3; }
+    f.eyeYaw = lerp(f.eyeYaw, f.gazeY, 1 - Math.exp(-25 * dt));
+    f.eyePitch = lerp(f.eyePitch, f.gazeP, 1 - Math.exp(-25 * dt));
+    f.burst = Math.max(0, f.burst - dt);
+    if (!Number.isFinite(f.pos.x + f.pos.y + f.pos.z + f.heading + f.speed + f.phase)) { spawnFish(f); f.speed = 0; f.hRate = 0; f.heading = 0; f.phase = 0; }
+  }
+  resolveKoiOverlaps(n);
+  writeKoiInstances(n);
+}
+// water too shallow for this fish: slide it downhill until floor and trough clearances fit
+function keepKoiInDepth(f) {
+  for (let it = 0; it < 6; it++) {
+    const need = koiFloorY(f, f.pos.x, f.pos.z) - koiCapY(f);
+    if (need <= 0) break;
+    const e = 0.12, x = f.pos.x, z = f.pos.z;
+    let gx = floorHeight(x + e, z) - floorHeight(x - e, z), gz = floorHeight(x, z + e) - floorHeight(x, z - e);
+    const gl = Math.hypot(gx, gz);
+    if (gl < 1e-5) { pondSDFGrad(x, z, _kg); gx = _kg.x; gz = _kg.y; } else { gx /= gl; gz /= gl; }
+    const step = Math.min(need * 1.5 + 0.01, 0.08);
+    f.pos.x -= gx * step; f.pos.z -= gz * step;
+  }
+  f.pos.y = Math.min(Math.max(f.pos.y, koiFloorY(f, f.pos.x, f.pos.z)), koiCapY(f));
+}
+// hard overlap resolution: three spheres along each spine
+const KOI_SPH = [[0.3, 0.085], [0.08, 0.1], [-0.16, 0.066]];
+function koiSphereCentres(f, out) {
+  const ch = Math.cos(f.heading), sh = -Math.sin(f.heading), cp = Math.cos(f.pitch), sp = Math.sin(f.pitch);
+  for (let i = 0; i < 3; i++) {
+    const lx = KOI_SPH[i][0] * f.size;
+    out[i * 3] = f.pos.x + ch * cp * lx; out[i * 3 + 1] = f.pos.y + sp * lx; out[i * 3 + 2] = f.pos.z + sh * cp * lx;
+  }
+  return out;
+}
+const _ca = new Float32Array(9), _cb = new Float32Array(9);
+function resolveKoiOverlaps(n) {
+  for (let it = 0; it < 5; it++) for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
+    const A = FISH[a], B = FISH[b];
+    if (A.pose && B.pose) continue;
+    if (Math.abs(A.pos.x - B.pos.x) > (A.size + B.size) * 0.6 || Math.abs(A.pos.z - B.pos.z) > (A.size + B.size) * 0.6) continue;
+    koiSphereCentres(A, _ca); koiSphereCentres(B, _cb);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const dx = _ca[i * 3] - _cb[j * 3], dy = _ca[i * 3 + 1] - _cb[j * 3 + 1], dz = _ca[i * 3 + 2] - _cb[j * 3 + 2];
+      const d = Math.hypot(dx, dy, dz), minD = KOI_SPH[i][1] * A.size * A.girth + KOI_SPH[j][1] * B.size * B.girth;
+      if (d < minD && d > 1e-6) {
+        const ma = A.pose ? 0 : A.size ** 3, mb = B.pose ? 0 : B.size ** 3, tot = ma + mb || 1;
+        const push = (minD - d) * 1.02, hl = Math.hypot(dx, dz) || 1e-6, ux = dx / hl, uz = dz / hl;
+        // resolve horizontally (vertical room is bounded by floor and troughs)
+        A.pos.x += ux * push * (mb / tot); A.pos.z += uz * push * (mb / tot);
+        B.pos.x -= ux * push * (ma / tot); B.pos.z -= uz * push * (ma / tot);
+        koiSphereCentres(A, _ca); koiSphereCentres(B, _cb);
+      }
+    }
+  }
+  for (let a = 0; a < n; a++) { const f = FISH[a]; if (!f.pose) keepKoiInDepth(f); }
+}
+function writeKoiInstances(n) {
+  const sw = KA.swim.array, mi = KA.misc.array, fi = KA.fin.array, lk = KA.look.array;
+  for (let k = 0; k < n; k++) {
+    const f = FISH[k];
+    _ke.set(f.roll, f.heading, f.pitch, 'YZX');
+    _kq.setFromEuler(_ke);
+    _km.compose(f.pos, _kq, _ks.set(f.size, f.size, f.size));
+    koiBody.setMatrixAt(k, _km); koiFins.setMatrixAt(k, _km); koiEyes.setMatrixAt(k, _km);
+    sw[k * 4] = f.phase % (Math.PI * 2); sw[k * 4 + 1] = f.amp; sw[k * 4 + 2] = f.bend; sw[k * 4 + 3] = f.mouth;
+    mi[k * 4] = f.i; mi[k * 4 + 1] = f.girth; mi[k * 4 + 2] = f.breath % (Math.PI * 2); mi[k * 4 + 3] = f.dorsalFlat;
+    fi[k * 4] = f.flare; fi[k * 4 + 1] = f.scullPh % (Math.PI * 2); fi[k * 4 + 2] = f.v.butterfly ? 1 : 0; fi[k * 4 + 3] = f.scull;
+    lk[k * 4] = f.eyeYaw; lk[k * 4 + 1] = f.eyePitch;
+    G.uKoiA.value[k].set(f.pos.x, f.pos.y, f.pos.z, f.heading);
+    G.uKoiB.value[k].set(f.size, f.phase % (Math.PI * 2), f.amp, f.bend);
+  }
+  for (const m of [koiBody, koiFins, koiEyes]) { m.count = n; m.instanceMatrix.needsUpdate = true; }
+  KA.swim.needsUpdate = KA.misc.needsUpdate = KA.fin.needsUpdate = KA.look.needsUpdate = true;
+  G.uKoiN.value = n;
+}
 
 /* =====================================================================================
    12. POST-PROCESSING
@@ -2559,6 +3514,8 @@ function step(dt, realDt = dt) {
   clock.frame++;
   updateManualCamera(dt);
   updateWaterfall(dt);
+  updateWind(clock.t);
+  updateKoi(P.freeze ? 0 : dt);
   renderFrame();
   const ms = performance.now() - t0;
   perf.acc += realDt; perf.n++;
@@ -2587,6 +3544,53 @@ const KOI = {
   set(k, v) { P[k] = v; },
   env,
   get P() { return P; },
+  fish: () => FISH.map((f) => ({ i: f.i, variety: f.variety, size: f.size, x: f.pos.x, y: f.pos.y, z: f.pos.z, speed: f.speed, mode: f.mode })),
+  lineup(cx = -2.1, cz = 0.1, cols = 5, dx = 1.25, dz = 0.95, heading = 0) {
+    FISH.forEach((f, k) => {
+      const c = k % cols, r = Math.floor(k / cols);
+      f.pose = true;
+      f.pos.set(cx + (c - (cols - 1) / 2) * dx, 0, cz + (r - 1.5) * dz);
+      f.heading = heading; f.pitch = 0; f.roll = 0; f.amp = 0.03; f.bend = 0; f.flare = 0.55; f.scull = 0.3; f.mouth = 0;
+      f.pos.y = koiCapY(f) - 0.01;
+    });
+    writeKoiInstances(P.fishCount);
+  },
+  release() { FISH.forEach((f) => { f.pose = false; }); },
+  // behaviour metrics over a simulated span: overlaps, depth cap, pond bounds, NaN
+  koiMetrics(seconds = 60, dt = 1 / 30) {
+    const m = { steps: 0, maxOverlap: 0, maxAboveTrough: -1, maxOutside: -9, nan: 0, belowFloor: 0, minClearTop: 9 };
+    const n = Math.round(seconds / dt), ca = new Float32Array(9), cb = new Float32Array(9);
+    for (let s = 0; s < n; s++) {
+      this.simulate(dt, dt);
+      const trough = WATER_Y - waveAmpSum() - 0.012;
+      for (let a = 0; a < P.fishCount; a++) {
+        const f = FISH[a];
+        if (!Number.isFinite(f.pos.x + f.pos.y + f.pos.z + f.heading)) m.nan++;
+        const top = f.pos.y + f.size * (0.116 + 0.088 * (1 - f.dorsalFlat)) * f.girth + Math.abs(Math.sin(f.pitch)) * 0.5 * f.size;
+        m.maxAboveTrough = Math.max(m.maxAboveTrough, top - trough);
+        m.maxOutside = Math.max(m.maxOutside, pondSDF(f.pos.x, f.pos.z));
+        if (f.pos.y < floorHeight(f.pos.x, f.pos.z)) m.belowFloor++;
+        koiSphereCentres(f, ca);
+        for (let b = a + 1; b < P.fishCount; b++) {
+          const g = FISH[b]; koiSphereCentres(g, cb);
+          for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+            const d = Math.hypot(ca[i * 3] - cb[j * 3], ca[i * 3 + 1] - cb[j * 3 + 1], ca[i * 3 + 2] - cb[j * 3 + 2]);
+            const ov = KOI_SPH[i][1] * f.size * f.girth + KOI_SPH[j][1] * g.size * g.girth - d;
+            m.maxOverlap = Math.max(m.maxOverlap, ov);
+          }
+        }
+      }
+      m.steps++;
+    }
+    return m;
+  },
+  koiVisible(v) { koiBody.visible = koiFins.visible = koiEyes.visible = v; },
+  // advance the simulation without rendering (for tests on software GL)
+  simulate(seconds, dt = 1 / 30) {
+    const n = Math.round(seconds / dt);
+    for (let i = 0; i < n; i++) { clock.t += dt; clock.elapsed += dt; G.uTime.value = clock.t; updateWind(clock.t); updateKoi(dt); SIM.drops.length = 0; }
+  },
+  setKoiN(n) { G.uKoiN.value = n; },
   info() { return { calls: frameInfo.calls, tris: frameInfo.tris, programs: renderer.info.programs.length, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }; },
 };
 window.KOI = KOI;
@@ -2602,6 +3606,7 @@ async function init() {
     ['Stones', buildStones],
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
+    ['Koi', buildKoi],
   ];
   for (let i = 0; i < steps.length; i++) {
     setLoader(i / steps.length, steps[i][0] + '…');
