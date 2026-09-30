@@ -39,12 +39,20 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 #hud { position: fixed; left: 14px; top: 14px; z-index: 20; padding: 6px 11px; font: 600 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   letter-spacing: 0.02em; pointer-events: none; }
 #hud b { color: #fff; font-weight: 700; }
+#caption { position: fixed; left: 0; right: 0; bottom: 13vh; z-index: 15; text-align: center; pointer-events: none; opacity: 0; transform: translateY(8px); transition: opacity 1.2s ease, transform 1.2s ease; text-shadow: 0 2px 18px rgba(0,0,0,0.55); }
+#caption.on { opacity: 1; transform: translateY(0); }
+#caption .c1 { font-family: var(--serif); font-size: clamp(22px, 3.2vw, 40px); letter-spacing: 0.06em; font-weight: 400; }
+#caption .c2 { font-family: var(--serif); font-size: clamp(13px, 1.4vw, 17px); letter-spacing: 0.5em; color: rgba(255,255,255,0.72); margin-top: 6px; }
+#toast { position: fixed; left: 50%; top: 18px; transform: translate(-50%, -12px); z-index: 30; padding: 8px 16px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.35s ease, transform 0.35s ease; white-space: nowrap; }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
 #hud span { color: var(--muted); font-weight: 500; }
 </style>
 </head>
 <body>
 <div id="loader"><div class="lt">Koi Pond Garden</div><div class="lj">鯉 の 池</div><div class="bar"><i></i></div><div class="ls">Preparing…</div></div>
 <div id="hud" class="glass"><b id="fps">--</b> <span>fps</span> · <b id="ms">--</b> <span>ms</span></div>
+<div id="caption"><div class="c1"></div><div class="c2"></div></div>
+<div id="toast" class="glass"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
@@ -5112,14 +5120,224 @@ function fsPass(mat, target) {
   renderer.setRenderTarget(target || null);
   renderer.render(fsScene, fsCam);
 }
-const COMPOSITE_FRAG = /* glsl */`
+// ---------- post-processing: SSAO, bloom, autofocus DOF, underwater god rays, composite ----------
+const POST = { mats: {}, bloomN: 5, focusIdx: 0 };
+const PP_COMMON = /* glsl */`
+uniform sampler2D tDepth;
+uniform mat4 uProjInv;
+uniform float uNear;
+uniform float uFar;
+float linDepth(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+vec3 viewPosAt(vec2 uv) { float d = texture2D(tDepth, uv).r; vec4 p = uProjInv * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0); return p.xyz / p.w; }
+float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+`;
+const SSAO_FRAG = /* glsl */`
+${PP_COMMON}
+uniform mat4 uProj;
+uniform vec2 uTexel;
+uniform float uRadius;
+uniform float uIntensity;
+uniform vec3 uKernel[12];
+varying vec2 vUv;
+void main() {
+  float d0 = texture2D(tDepth, vUv).r;
+  if (d0 >= 0.99999) { gl_FragColor = vec4(1.0); return; }
+  vec3 P = viewPosAt(vUv);
+  vec3 dx1 = viewPosAt(vUv + vec2(uTexel.x, 0.0)) - P, dx2 = P - viewPosAt(vUv - vec2(uTexel.x, 0.0));
+  vec3 dy1 = viewPosAt(vUv + vec2(0.0, uTexel.y)) - P, dy2 = P - viewPosAt(vUv - vec2(0.0, uTexel.y));
+  vec3 dx = abs(dx1.z) < abs(dx2.z) ? dx1 : dx2;
+  vec3 dy = abs(dy1.z) < abs(dy2.z) ? dy1 : dy2;
+  vec3 N = normalize(cross(dx, dy));
+  if (dot(N, -P) < 0.0) N = -N;
+  float a = h12(gl_FragCoord.xy) * 6.2831853;
+  vec3 rv = vec3(cos(a), sin(a), 0.0);
+  vec3 T = normalize(rv - N * dot(rv, N));
+  vec3 B = cross(N, T);
+  float rad = uRadius * clamp(-P.z * 0.08 + 0.5, 0.5, 2.0);
+  float occ = 0.0;
+  for (int i = 0; i < 12; i++) {
+    vec3 s = P + (T * uKernel[i].x + B * uKernel[i].y + N * uKernel[i].z) * rad;
+    vec4 c = uProj * vec4(s, 1.0);
+    vec2 suv = c.xy / c.w * 0.5 + 0.5;
+    if (suv.x < 0.0 || suv.y < 0.0 || suv.x > 1.0 || suv.y > 1.0) continue;
+    float sz = viewPosAt(suv).z;
+    float range = smoothstep(0.0, 1.0, rad / abs(P.z - sz));
+    occ += (sz >= s.z + 0.02 * rad ? 1.0 : 0.0) * range;
+  }
+  float ao = clamp(1.0 - occ / 12.0 * uIntensity, 0.0, 1.0);
+  gl_FragColor = vec4(ao, 0.0, 0.0, 1.0);
+}`;
+const BLUR_AO_FRAG = /* glsl */`
+${PP_COMMON}
+uniform sampler2D tAO;
+uniform vec2 uDir;
+varying vec2 vUv;
+void main() {
+  float z0 = linDepth(texture2D(tDepth, vUv).r);
+  float sum = 0.0, wsum = 0.0;
+  for (int i = -3; i <= 3; i++) {
+    vec2 uv = vUv + uDir * float(i);
+    float z = linDepth(texture2D(tDepth, uv).r);
+    float w = exp(-float(i * i) * 0.12) * exp(-abs(z - z0) / (0.03 * z0 + 0.02));
+    sum += texture2D(tAO, uv).r * w; wsum += w;
+  }
+  gl_FragColor = vec4(sum / max(wsum, 1e-4), 0.0, 0.0, 1.0);
+}`;
+// bloom: prefilter with a soft threshold, 13-tap downsample chain, tent upsample
+const BLOOM_PRE_FRAG = /* glsl */`
+uniform sampler2D tSrc;
+uniform vec2 uTexel;
+uniform float uThreshold;
+uniform float uClampMax;
+varying vec2 vUv;
+vec3 tap(vec2 o) { return min(texture2D(tSrc, vUv + o * uTexel).rgb, vec3(uClampMax)); }
+void main() {
+  vec3 c = tap(vec2(0.0)) * 0.5 + (tap(vec2(-1.0, -1.0)) + tap(vec2(1.0, -1.0)) + tap(vec2(-1.0, 1.0)) + tap(vec2(1.0, 1.0))) * 0.125;
+  float br = max(c.r, max(c.g, c.b));
+  float knee = uThreshold * 0.5;
+  float soft = clamp(br - uThreshold + knee, 0.0, 2.0 * knee);
+  soft = soft * soft / (4.0 * knee + 1e-4);
+  float contrib = max(soft, br - uThreshold) / max(br, 1e-4);
+  gl_FragColor = vec4(c * contrib, 1.0);
+}`;
+const BLOOM_DOWN_FRAG = /* glsl */`
+uniform sampler2D tSrc;
+uniform vec2 uTexel;
+varying vec2 vUv;
+vec3 t(vec2 o) { return texture2D(tSrc, vUv + o * uTexel).rgb; }
+void main() {
+  vec3 a = t(vec2(-2.0, 2.0)), b = t(vec2(0.0, 2.0)), c = t(vec2(2.0, 2.0));
+  vec3 d = t(vec2(-2.0, 0.0)), e = t(vec2(0.0)), f = t(vec2(2.0, 0.0));
+  vec3 g = t(vec2(-2.0, -2.0)), h = t(vec2(0.0, -2.0)), i = t(vec2(2.0, -2.0));
+  vec3 j = t(vec2(-1.0, 1.0)), k = t(vec2(1.0, 1.0)), l = t(vec2(-1.0, -1.0)), m = t(vec2(1.0, -1.0));
+  vec3 s = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+  gl_FragColor = vec4(s, 1.0);
+}`;
+const BLOOM_UP_FRAG = /* glsl */`
+uniform sampler2D tSrc;
+uniform sampler2D tBase;
+uniform vec2 uTexel;
+uniform float uRadius;
+varying vec2 vUv;
+vec3 t(vec2 o) { return texture2D(tSrc, vUv + o * uTexel * uRadius).rgb; }
+void main() {
+  vec3 s = t(vec2(0.0)) * 4.0 + (t(vec2(-1.0, 0.0)) + t(vec2(1.0, 0.0)) + t(vec2(0.0, -1.0)) + t(vec2(0.0, 1.0))) * 2.0
+         + t(vec2(-1.0, -1.0)) + t(vec2(1.0, -1.0)) + t(vec2(-1.0, 1.0)) + t(vec2(1.0, 1.0));
+  gl_FragColor = vec4(texture2D(tBase, vUv).rgb + s / 16.0, 1.0);
+}`;
+// autofocus: smoothed distance under the crosshair, kept on the GPU (1x1 ping-pong)
+const FOCUS_FRAG = /* glsl */`
+${PP_COMMON}
+uniform sampler2D tPrev;
+uniform float uBlend;
+uniform float uManual;
+varying vec2 vUv;
+void main() {
+  float best = 1e9;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    float d = texture2D(tDepth, vec2(0.5) + vec2(float(i), float(j)) * 0.02).r;
+    best = min(best, d >= 0.99999 ? uFar : linDepth(d));
+  }
+  float prev = texture2D(tPrev, vec2(0.5)).r;
+  float target = uManual > 0.0 ? uManual : best;
+  float f = prev <= 0.0 ? target : mix(prev, target, uBlend);
+  gl_FragColor = vec4(f, target, 0.0, 1.0);
+}`;
+// DOF: physical circle of confusion, half-res gather on a golden-angle spiral
+const DOF_FRAG = /* glsl */`
+${PP_COMMON}
+uniform sampler2D tSrc;
+uniform sampler2D tFocus;
+uniform vec2 uTexel;
+uniform float uFocal;      // focal length (m)
+uniform float uAperture;   // aperture diameter (m)
+uniform float uSensorH;    // sensor height (m)
+uniform float uScreenH;    // pixels
+uniform float uMaxCoC;     // pixels
+varying vec2 vUv;
+float coc(float z, float S1) { return uAperture * uFocal * abs(z - S1) / (z * max(S1 - uFocal, 1e-3)) / uSensorH * uScreenH; }
+void main() {
+  float S1 = texture2D(tFocus, vec2(0.5)).r;
+  float z0 = linDepth(texture2D(tDepth, vUv).r);
+  float c0 = min(coc(z0, S1), uMaxCoC);
+  vec3 acc = vec3(0.0); float wsum = 0.0;
+  float R = uMaxCoC;
+  if (c0 < 0.35 && R < 1.0) { gl_FragColor = vec4(texture2D(tSrc, vUv).rgb, c0); return; }
+  const int N = 36;
+  for (int i = 0; i < N; i++) {
+    float r = sqrt((float(i) + 0.5) / float(N));
+    float a = float(i) * 2.39996323;
+    vec2 o = vec2(cos(a), sin(a)) * r * R;
+    vec2 uv = vUv + o * uTexel * 2.0;
+    float z = linDepth(texture2D(tDepth, uv).r);
+    float cs = min(coc(z, S1), uMaxCoC);
+    float dist = r * R;
+    float w = smoothstep(dist - 1.0, dist + 0.5, max(cs, z < z0 ? cs : min(cs, c0)));
+    acc += texture2D(tSrc, uv).rgb * w; wsum += w;
+  }
+  vec3 col = wsum > 0.0 ? acc / wsum : texture2D(tSrc, vUv).rgb;
+  gl_FragColor = vec4(col, c0);
+}`;
+// underwater light shafts marched through the water column, shaped by the caustic pattern
+const RAYS_FRAG = /* glsl */`
+${PP_COMMON}
+uniform mat4 uCamWorld;
+uniform vec3 uCamPos;
+uniform sampler2D tCaus;
+uniform vec3 uSunW;
+uniform vec3 uSunCol;
+uniform vec3 uExt;
+uniform float uTime;
+uniform float uWaterY;
+uniform float uStrength;
+varying vec2 vUv;
+void main() {
+  vec3 vp = viewPosAt(vUv);
+  float d = texture2D(tDepth, vUv).r;
+  vec3 wp = (uCamWorld * vec4(vp, 1.0)).xyz;
+  vec3 rd = normalize(wp - uCamPos);
+  float L = d >= 0.99999 ? 9.0 : min(length(wp - uCamPos), 9.0);
+  vec2 slope = uSunW.xz / max(uSunW.y, 0.2);
+  float jit = h12(gl_FragCoord.xy + fract(uTime) * 91.0);
+  vec3 acc = vec3(0.0);
+  const int STEPS = 14;
+  float dt = L / float(STEPS);
+  for (int i = 0; i < STEPS; i++) {
+    float t = (float(i) + jit) * dt;
+    vec3 p = uCamPos + rd * t;
+    float depth = uWaterY - p.y;
+    if (depth < 0.0) break;
+    vec2 e = p.xz + slope * depth;
+    float c = texture2D(tCaus, e * 0.22 + vec2(uTime * 0.012, uTime * 0.008)).r * texture2D(tCaus, e * 0.15 - vec2(uTime * 0.009, -uTime * 0.011)).r;
+    float shaft = smoothstep(0.02, 0.22, c) * 1.6 + 0.08;
+    acc += shaft * exp(-uExt * (depth / max(uSunW.y, 0.2) + t)) * dt;
+  }
+  // single scattering: scattering coefficient x Henyey-Greenstein forward lobe
+  float cosT = dot(rd, uSunW), g = 0.72;
+  float phase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5) * 0.0796;
+  gl_FragColor = vec4(acc * uSunCol * phase * uStrength, 1.0);
+}`;
+const COMPOSITE2_FRAG = /* glsl */`
 uniform sampler2D tHDR;
+uniform sampler2D tAO;
+uniform sampler2D tBloom;
+uniform sampler2D tDof;
+uniform sampler2D tRays;
 uniform float uExposure;
 uniform vec3 uGrade;
 uniform float uVignette;
 uniform float uGrain;
 uniform float uTime;
 uniform vec2 uRes;
+uniform float uAO;
+uniform float uBloom;
+uniform float uDofOn;
+uniform float uRaysOn;
+uniform float uSharpen;
+uniform float uLetterbox;
+uniform float uFade;
+uniform float uUnder;
+uniform float uCA;
 varying vec2 vUv;
 vec3 RRTAndODTFit(vec3 v) { vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }
 vec3 ACES(vec3 color) {
@@ -5131,18 +5349,172 @@ vec3 ACES(vec3 color) {
 }
 vec3 toSRGB(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }
 float h12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec3 hdrAt(vec2 uv) { return texture2D(tHDR, uv).rgb; }
 void main() {
-  vec3 c = texture2D(tHDR, vUv).rgb;
+  vec2 px = 1.0 / uRes;
+  vec2 q = vUv - 0.5;
+  // subtle lateral chromatic aberration toward the edges
+  vec2 ca = q * dot(q, q) * uCA;
+  vec4 base = texture2D(tHDR, vUv);
+  vec3 c = vec3(texture2D(tHDR, vUv - ca).r, base.g, texture2D(tHDR, vUv + ca).b);
+  // lens sharpening (unsharp mask on the HDR image)
+  vec3 blur = (hdrAt(vUv + vec2(px.x, 0.0)) + hdrAt(vUv - vec2(px.x, 0.0)) + hdrAt(vUv + vec2(0.0, px.y)) + hdrAt(vUv - vec2(0.0, px.y))) * 0.25;
+  c = max(c + (c - blur) * uSharpen, 0.0);
+  // ambient occlusion on solid surfaces only (alpha marks water and sky)
+  float ao = texture2D(tAO, vUv).r;
+  c *= mix(1.0, ao, uAO * base.a);
+  // depth of field: continuous blend toward the half-res gather
+  if (uDofOn > 0.5) {
+    vec4 d = texture2D(tDof, vUv);
+    c = mix(c, d.rgb, smoothstep(0.35, 1.6, d.a));
+  }
+  c += texture2D(tRays, vUv).rgb * uRaysOn;
+  c += texture2D(tBloom, vUv).rgb * uBloom;
   c = max(c, 0.0) * uGrade;
   c = ACES(c * uExposure);
-  vec2 q = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
-  c *= 1.0 - uVignette * smoothstep(0.35, 1.25, length(q) * 1.15);
+  vec2 vq = q * vec2(uRes.x / uRes.y, 1.0);
+  c *= 1.0 - uVignette * smoothstep(0.35, 1.25, length(vq) * 1.15);
   c = toSRGB(c);
   float g = h12(vUv * uRes + fract(uTime * 7.13) * 431.0) + h12(vUv * uRes * 1.37 - fract(uTime * 3.7) * 97.0) - 1.0;
   c += g * uGrain * 1.5;
+  c *= 1.0 - uFade;
+  float bar = uLetterbox * 0.5 * (1.0 - (uRes.x / uRes.y) / 2.39);
+  if (vUv.y < bar || vUv.y > 1.0 - bar) c = vec3(0.0);
   gl_FragColor = vec4(c, 1.0);
 }`;
-let compositeMat;
+function ppMat(frag, uniforms) {
+  return new THREE.ShaderMaterial({ uniforms, vertexShader: FS_VERT, fragmentShader: frag, depthTest: false, depthWrite: false });
+}
+function buildPostChain() {
+  const depthU = () => ({ tDepth: { value: null }, uProjInv: { value: new THREE.Matrix4() }, uNear: { value: 0.04 }, uFar: { value: 2400 } });
+  const kernel = [];
+  for (let i = 0; i < 12; i++) {
+    const a = i * 2.39996, r = Math.sqrt((i + 0.5) / 12);
+    const z = Math.sqrt(1 - r * r) * 0.8 + 0.2;
+    const s = lerp(0.15, 1, sq((i + 1) / 12));
+    kernel.push(new THREE.Vector3(Math.cos(a) * r * s, Math.sin(a) * r * s, z * s));
+  }
+  POST.mats.ssao = ppMat(SSAO_FRAG, Object.assign(depthU(), { uProj: { value: new THREE.Matrix4() }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 0.5 }, uIntensity: { value: 1.25 }, uKernel: { value: kernel } }));
+  POST.mats.aoBlur = ppMat(BLUR_AO_FRAG, Object.assign(depthU(), { tAO: { value: null }, uDir: { value: new THREE.Vector2() } }));
+  POST.mats.bloomPre = ppMat(BLOOM_PRE_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 0.9 }, uClampMax: { value: 60 } });
+  POST.mats.bloomDown = ppMat(BLOOM_DOWN_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
+  POST.mats.bloomUp = ppMat(BLOOM_UP_FRAG, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 1 } });
+  POST.mats.focus = ppMat(FOCUS_FRAG, Object.assign(depthU(), { tPrev: { value: null }, uBlend: { value: 0.1 }, uManual: { value: 0 } }));
+  POST.mats.dof = ppMat(DOF_FRAG, Object.assign(depthU(), { tSrc: { value: null }, tFocus: { value: null }, uTexel: { value: new THREE.Vector2() }, uFocal: { value: 0.025 }, uAperture: { value: 0.003 }, uSensorH: { value: 0.024 }, uScreenH: { value: 720 }, uMaxCoC: { value: 12 } }));
+  POST.mats.rays = ppMat(RAYS_FRAG, Object.assign(depthU(), { uCamWorld: { value: new THREE.Matrix4() }, uCamPos: { value: new THREE.Vector3() }, tCaus: G.tCaustics, uSunW: G.uSunDirW, uSunCol: G.uSunColor, uExt: { value: new THREE.Vector3() }, uTime: G.uTime, uWaterY: G.uWaterY, uStrength: { value: 0.35 } }));
+  POST.mats.comp = ppMat(COMPOSITE2_FRAG, {
+    tHDR: { value: null }, tAO: { value: null }, tBloom: { value: null }, tDof: { value: null }, tRays: { value: null },
+    uExposure: { value: 0.9 }, uGrade: { value: env.grade }, uVignette: { value: 0.32 }, uGrain: { value: 0.01 }, uTime: G.uTime, uRes: { value: new THREE.Vector2() },
+    uAO: { value: 1 }, uBloom: { value: 0.3 }, uDofOn: { value: 0 }, uRaysOn: { value: 0 }, uSharpen: { value: 0.35 }, uLetterbox: { value: 0 }, uFade: { value: 0 }, uUnder: { value: 0 }, uCA: { value: 0.012 },
+  });
+  const f = { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false };
+  RT.focus = [new THREE.WebGLRenderTarget(1, 1, f), new THREE.WebGLRenderTarget(1, 1, f)];
+  RT.black = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+  renderer.setRenderTarget(RT.black); renderer.setClearColor(0x000000, 0); renderer.clear(true, false, false);
+}
+function allocPostTargets(w, h) {
+  const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1);
+  const half = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+  for (const k of ['ao', 'ao2', 'dof', 'rays']) { if (RT[k]) RT[k].dispose(); RT[k] = new THREE.WebGLRenderTarget(hw, hh, half); }
+  if (RT.bloom) RT.bloom.concat(RT.bloomUp).forEach((t) => t.dispose());
+  RT.bloom = []; RT.bloomUp = [];
+  let bw = hw, bh = hh;
+  for (let i = 0; i < POST.bloomN; i++) {
+    RT.bloom.push(new THREE.WebGLRenderTarget(Math.max(1, bw), Math.max(1, bh), half));
+    RT.bloomUp.push(new THREE.WebGLRenderTarget(Math.max(1, bw), Math.max(1, bh), half));
+    bw >>= 1; bh >>= 1;
+  }
+}
+function setDepthUniforms(m) {
+  m.uniforms.tDepth.value = RT.main.depthTexture;
+  m.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
+  m.uniforms.uNear.value = camera.near; m.uniforms.uFar.value = camera.far;
+}
+function renderPost(dt) {
+  const M = POST.mats, w = RT.w, h = RT.h, under = camState.under;
+  // autofocus
+  setDepthUniforms(M.focus);
+  const prevF = RT.focus[POST.focusIdx], nextF = RT.focus[1 - POST.focusIdx];
+  M.focus.uniforms.tPrev.value = prevF.texture;
+  M.focus.uniforms.uBlend.value = 1 - Math.exp(-dt * 3.5);
+  fsPass(M.focus, nextF);
+  POST.focusIdx = 1 - POST.focusIdx;
+  // SSAO (half res) + bilateral blur
+  const aoOn = P.ssao > 0.01 && !under;
+  if (aoOn) {
+    setDepthUniforms(M.ssao);
+    M.ssao.uniforms.uProj.value.copy(camera.projectionMatrix);
+    M.ssao.uniforms.uTexel.value.set(2 / w, 2 / h);
+    fsPass(M.ssao, RT.ao);
+    setDepthUniforms(M.aoBlur);
+    M.aoBlur.uniforms.tAO.value = RT.ao.texture; M.aoBlur.uniforms.uDir.value.set(2 / w, 0);
+    fsPass(M.aoBlur, RT.ao2);
+    M.aoBlur.uniforms.tAO.value = RT.ao2.texture; M.aoBlur.uniforms.uDir.value.set(0, 2 / h);
+    fsPass(M.aoBlur, RT.ao);
+  }
+  // bloom chain
+  M.bloomPre.uniforms.tSrc.value = RT.main.texture;
+  M.bloomPre.uniforms.uTexel.value.set(1 / w, 1 / h);
+  M.bloomPre.uniforms.uThreshold.value = P.bloomThreshold;
+  fsPass(M.bloomPre, RT.bloom[0]);
+  for (let i = 1; i < POST.bloomN; i++) {
+    M.bloomDown.uniforms.tSrc.value = RT.bloom[i - 1].texture;
+    M.bloomDown.uniforms.uTexel.value.set(1 / RT.bloom[i - 1].width, 1 / RT.bloom[i - 1].height);
+    fsPass(M.bloomDown, RT.bloom[i]);
+  }
+  let src = RT.bloom[POST.bloomN - 1];
+  for (let i = POST.bloomN - 2; i >= 0; i--) {
+    M.bloomUp.uniforms.tSrc.value = src.texture;
+    M.bloomUp.uniforms.tBase.value = RT.bloom[i].texture;
+    M.bloomUp.uniforms.uTexel.value.set(1 / src.width, 1 / src.height);
+    fsPass(M.bloomUp, RT.bloomUp[i]);
+    src = RT.bloomUp[i];
+  }
+  // depth of field with a physical lens (sensor 36x24 mm, focal length from the field of view)
+  const fstop = under ? Math.min(P.fstop, 4) : P.fstop;
+  const focal = (0.012) / Math.tan((camera.fov * DEG) / 2);
+  const dofOn = P.dof;
+  if (dofOn) {
+    setDepthUniforms(M.dof);
+    const U = M.dof.uniforms;
+    U.tSrc.value = RT.main.texture; U.tFocus.value = RT.focus[POST.focusIdx].texture;
+    U.uTexel.value.set(1 / w, 1 / h);
+    U.uFocal.value = focal; U.uAperture.value = focal / fstop; U.uScreenH.value = h * 0.5;
+    U.uMaxCoC.value = P.maxBokeh * 0.5;
+    fsPass(M.dof, RT.dof);
+  }
+  // underwater god rays
+  const raysOn = under && P.godRays > 0.01;
+  if (raysOn) {
+    setDepthUniforms(M.rays);
+    M.rays.uniforms.uCamWorld.value.copy(camera.matrixWorld);
+    M.rays.uniforms.uCamPos.value.copy(camera.position);
+    M.rays.uniforms.uExt.value.copy(G.uAbsorb.value).addScalar(G.uScatter.value);
+    M.rays.uniforms.uStrength.value = G.uScatter.value * 2.5 * P.godRays * (1 - env.overcast * 0.8);
+    fsPass(M.rays, RT.rays);
+  }
+  // composite to screen
+  const C = M.comp.uniforms;
+  C.tHDR.value = RT.main.texture;
+  C.tAO.value = aoOn ? RT.ao.texture : RT.black.texture;
+  C.uAO.value = aoOn ? P.ssao : 0;
+  C.tBloom.value = RT.bloomUp[0].texture;
+  C.tDof.value = RT.dof.texture;
+  C.uDofOn.value = dofOn ? 1 : 0;
+  C.tRays.value = RT.rays.texture;
+  C.uRaysOn.value = raysOn ? 1 : 0;
+  C.uExposure.value = env.exposure * (P.exposure / 0.9);
+  C.uBloom.value = P.bloom;
+  C.uVignette.value = P.vignette;
+  C.uGrain.value = P.grain;
+  C.uSharpen.value = P.sharpen;
+  C.uRes.value.set(w, h);
+  C.uLetterbox.value = CAM.letterbox;
+  C.uFade.value = CAM.fade;
+  C.uUnder.value = under ? 1 : 0;
+  fsPass(M.comp, null);
+}
+
 function buildPost() {
   fsScene = new THREE.Scene();
   fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -5151,10 +5523,7 @@ function buildPost() {
   fsTri = new THREE.Mesh(g, null);
   fsTri.frustumCulled = false;
   fsScene.add(fsTri);
-  compositeMat = new THREE.ShaderMaterial({
-    uniforms: { tHDR: { value: null }, uExposure: { value: 0.9 }, uGrade: { value: env.grade }, uVignette: { value: 0.32 }, uGrain: { value: 0.01 }, uTime: G.uTime, uRes: { value: new THREE.Vector2() } },
-    vertexShader: FS_VERT, fragmentShader: COMPOSITE_FRAG, depthTest: false, depthWrite: false,
-  });
+  buildPostChain();
   allocTargets();
 }
 function allocTargets() {
@@ -5168,7 +5537,7 @@ function allocTargets() {
   RT.w = w; RT.h = h;
   if (!RT.dummy) RT.dummy = new THREE.WebGLRenderTarget(1, 1);
   allocWaterTargets(w, h);
-  compositeMat.uniforms.uRes.value.set(w, h);
+  allocPostTargets(w, h);
 }
 
 /* =====================================================================================
@@ -5218,6 +5587,212 @@ function updateManualCamera(dt) {
   applyCamRotation();
 }
 
+// ---------- camera modes: cinematic film tour, manual fly, follow koi ----------
+const CAM = { mode: 'Cinematic', shot: 0, t: 0, loop: 0, fade: 1, letterbox: 0, caption: '', follow: 0, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), started: false, lastShot: -1, subject: null };
+const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
+const easeIO = (t) => t * t * (3 - 2 * t);
+function highestKoi() {
+  let best = FISH[0];
+  for (let i = 0; i < P.fishCount; i++) if (FISH[i].pos.y > best.pos.y) best = FISH[i];
+  return best;
+}
+// each shot returns camera position and look target for normalised time u
+const SHOTS = [
+  { name: 'The garden from above', sub: '庭園', dur: 13, fn(u, s) { const a = lerp(2.2, 1.45, easeIO(u)); const r = lerp(12.5, 10, easeIO(u)); _cp.set(0.5 + Math.cos(a) * r, lerp(13.5, 8.5, easeIO(u)), -1 + Math.sin(a) * r); _ct.set(0.5, 0, -1.4); } },
+  { name: 'The koi pond', sub: '鯉の池', dur: 11, fn(u) { _cp.set(lerp(-2.5, 1.8, easeIO(u)), lerp(2.6, 2.1, u), lerp(9.8, 8.6, u)); _ct.set(lerp(-0.6, 0.6, u), -0.2, -0.6); } },
+  { name: 'Koi', sub: '錦鯉', dur: 11, start(s) { s.subject = highestKoi(); }, fn(u, s) {
+      const f = s.subject || FISH[0];
+      const back = new THREE.Vector3(-Math.cos(f.heading), 0, Math.sin(f.heading));
+      _ct.set(f.pos.x, f.pos.y, f.pos.z);
+      const side = new THREE.Vector3(-back.z, 0, back.x);
+      _cp.set(f.pos.x + back.x * (0.45 + f.size * 0.9) + side.x * 0.35, WATER_Y + 0.45 + f.size * 0.55, f.pos.z + back.z * (0.45 + f.size * 0.9) + side.z * 0.35);
+    } },
+  { name: 'Sacred lotus', sub: '蓮', dur: 10, fn(u) { const a = lerp(-0.4, 0.5, easeIO(u)); _cp.set(4.95 + Math.cos(a) * 2.1, lerp(0.75, 1.05, u), 0.55 + Math.sin(a) * 2.1 + 0.3); _ct.set(4.95, 0.55, 0.45); } },
+  { name: 'Bamboo grove', sub: '竹林', dur: 12, fn(u) { _cp.set(lerp(-9.5, -10.3, u), lerp(1.3, 2.4, easeIO(u)), lerp(-2.6, -3.7, u)); _ct.set(-11.6, lerp(3.0, 6.0, easeIO(u)), -6.8); } },
+  { name: 'Weeping cherry', sub: '枝垂れ桜', dur: 10, fn(u) { _cp.set(lerp(-3.4, -4.6, easeIO(u)), lerp(1.3, 1.6, u), lerp(-0.6, -1.6, easeIO(u))); _ct.set(-7.1, lerp(1.9, 2.3, u), -3.3); } },
+  { name: 'Cherry blossom', sub: '桜', dur: 11, fn(u) { const a = lerp(2.0, 3.0, easeIO(u)); _cp.set(7.7 + Math.cos(a) * 5.2, lerp(1.6, 2.4, u), 4.2 + Math.sin(a) * 5.2); _ct.set(7.7, 2.6, 4.2); } },
+  { name: 'Pond frog', sub: '蛙', dur: 10, fn(u) {
+      const g = FROG.group ? FROG.group.position : new THREE.Vector3(-4.4, 0, -2.2);
+      const a = lerp(0.9, 1.5, easeIO(u));
+      _cp.set(g.x + Math.cos(a) * 0.55, WATER_Y + 0.16, g.z + Math.sin(a) * 0.55); _ct.set(g.x, g.y + 0.03, g.z);
+    } },
+  { name: 'Yellow-bellied slider', sub: '亀', dur: 9, fn(u) {
+      const p = TURTLE.pos, a = lerp(0.3, 1.2, easeIO(u)) + TURTLE.yaw;
+      _cp.set(p.x + Math.cos(a) * 1.1, Math.max(p.y + 0.45, WATER_Y + 0.25), p.z + Math.sin(a) * 1.1); _ct.set(p.x, p.y + 0.05, p.z);
+    } },
+  { name: 'Beneath the surface', sub: '水中', dur: 13, under: true, fn(u) { _cp.set(lerp(-3.8, -1.2, easeIO(u)), lerp(-0.35, -0.55, u), lerp(1.6, 0.6, u)); _ct.set(lerp(-2.4, 0.4, u), -0.45, -2.2); } },
+  { name: 'The koi pond', sub: '鯉の池', dur: 11, fn(u) { _cp.set(lerp(3.6, 0.6, easeIO(u)), lerp(3.2, 2.4, u), lerp(10.2, 10.5, u)); _ct.set(0, -0.3, 0); } },
+];
+function cinematicUpdate(dtReal) {
+  const shots = SHOTS.filter((s) => !(s.under && P.stayAbove));
+  if (CAM.shot >= shots.length) CAM.shot = 0;
+  const S = shots[CAM.shot];
+  if (CAM.lastShot !== CAM.shot) { CAM.lastShot = CAM.shot; if (S.start) S.start(CAM); showCaption(S.name, S.sub); }
+  if (!P.hold) CAM.t += dtReal * P.pathSpeed;
+  const u = clamp(CAM.t / S.dur, 0, 1);
+  S.fn(u, CAM);
+  // dips to black between shots
+  const fadeT = 0.7;
+  CAM.fade = P.hold ? 0 : Math.max(smoothstep(fadeT, 0, CAM.t), smoothstep(S.dur - fadeT, S.dur, CAM.t));
+  CAM.letterbox = lerp(CAM.letterbox, P.letterbox ? 1 : 0, 1 - Math.exp(-dtReal * 3));
+  if (CAM.t >= S.dur) {
+    CAM.t = 0; CAM.shot++;
+    if (CAM.shot >= shots.length) { CAM.shot = 0; CAM.loop++; if (P.seasonLoop) setWeather(WEATHER_NAMES[(WEATHER_NAMES.indexOf(P.weather) + 1) % WEATHER_NAMES.length]); }
+  }
+  // keep the eye out of the ground and (optionally) out of the water
+  const floor = terrainHeight(_cp.x, _cp.z) + 0.1;
+  if (_cp.y < floor) _cp.y = floor;
+  if (P.stayAbove && _cp.y < WATER_Y + 0.08) _cp.y = WATER_Y + 0.08;
+  camera.position.copy(_cp);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(_ct);
+  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  camState.yaw = e.y; camState.pitch = e.x;
+  camera.updateMatrixWorld();
+}
+function followUpdate(dtReal) {
+  const f = FISH[clamp(CAM.follow, 0, Math.max(P.fishCount - 1, 0))];
+  if (!f) return;
+  const h = 1.25 + f.size * 2.2;
+  _cp.set(f.pos.x, WATER_Y + h, f.pos.z);
+  const k = 1 - Math.exp(-dtReal * 2.5);
+  CAM.pos.lerp(_cp, k);
+  if (CAM.pos.lengthSq() === 0) CAM.pos.copy(_cp);
+  camera.position.copy(CAM.pos);
+  // classic top-down: the fish swims "up" the screen
+  camState.yaw = lerp(camState.yaw, camState.yaw + wrapAngle(f.heading - Math.PI / 2 - camState.yaw), k);
+  camera.rotation.set(-Math.PI / 2 + 0.001, 0, 0, 'YXZ');
+  camera.rotation.y = camState.yaw;
+  camera.updateMatrixWorld();
+  CAM.fade = 0; CAM.letterbox = lerp(CAM.letterbox, 0, k);
+}
+function setCamMode(m) {
+  P.camMode = m; CAM.mode = m;
+  if (m === 'Cinematic') { CAM.t = 0; CAM.lastShot = -1; }
+  if (m === 'Follow koi') { CAM.pos.set(0, 0, 0); }
+  if (m !== 'Cinematic') { CAM.fade = 0; hideCaption(); }
+  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD to move' : 'Following ' + FISH[CAM.follow].variety);
+  if (window.GUI_REFRESH) GUI_REFRESH();
+}
+function updateCamera(dtReal, dt) {
+  if (CAM.mode === 'Cinematic') cinematicUpdate(dtReal);
+  else if (CAM.mode === 'Follow koi') followUpdate(dtReal);
+  else { CAM.letterbox = lerp(CAM.letterbox, 0, 1 - Math.exp(-dtReal * 3)); CAM.fade = 0; updateManualCamera(dtReal); }
+}
+// captions (serif, fading) live in the DOM
+let _capTimer = null;
+function showCaption(name, sub) {
+  const el = document.getElementById('caption');
+  if (!el || !P.letterbox) return;
+  el.querySelector('.c1').textContent = name;
+  el.querySelector('.c2').textContent = sub || '';
+  el.classList.add('on');
+  clearTimeout(_capTimer);
+  _capTimer = setTimeout(() => el.classList.remove('on'), 4200);
+}
+function hideCaption() { const el = document.getElementById('caption'); if (el) el.classList.remove('on'); }
+// ---------- weather crossfade and precipitation ----------
+function setWeather(name, instant = false) {
+  if (!WEATHER[name]) return;
+  P.weather = name;
+  const w = WEATHER[name];
+  P.tod = w.tod; P.wind = w.wind;
+  if (instant) blendWeather(1e9);
+  toast('Weather — ' + name);
+  if (window.GUI_REFRESH) GUI_REFRESH();
+}
+function blendWeather(dt) {
+  const w = WEATHER[P.weather];
+  const k = 1 - Math.exp(-dt / 2.2);
+  for (const key of ['cloud', 'turbidity', 'overcast', 'sunMul', 'hemiMul', 'fog', 'rain', 'wet', 'snow', 'snowCover', 'ice', 'autumn', 'exposure', 'koi']) {
+    const rate = key === 'snowCover' || key === 'ice' || key === 'wet' ? k * 0.5 : k;
+    env[key] = lerp(env[key], w[key], rate);
+  }
+  env.fogColor.lerp(_tmpC.setRGB(w.fogColor[0], w.fogColor[1], w.fogColor[2]), k);
+  env.grade.lerp(_v3.set(w.grade[0], w.grade[1], w.grade[2]), k);
+  env.tod = lerp(env.tod, P.tod, k);
+  env.wind = lerp(env.wind, P.wind, k);
+}
+let precipMesh;
+function buildPrecip() {
+  const N = 2400;
+  const g = new THREE.InstancedBufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, 0.5, 1, 0, -0.5, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  const seeds = new Float32Array(N * 4);
+  for (let i = 0; i < N * 4; i++) seeds[i] = Math.random();
+  g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 4));
+  g.instanceCount = N;
+  const m = new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uCam: { value: new THREE.Vector3() }, uSnow: { value: 0 }, uRainA: { value: 0 }, uLit: { value: new THREE.Color() } }, G),
+    vertexShader: `${GLSL_COMMON}
+      attribute vec4 aSeed; uniform vec3 uCam; uniform float uSnow; uniform float uRainA; varying vec2 vUv; varying float vA; varying float vSnowV;
+      void main() {
+        float isSnow = step(aSeed.w, uSnow / max(uSnow + uRainA, 1e-3));
+        float speed = mix(8.5, 0.9, isSnow);
+        vec3 box = vec3(16.0, 11.0, 16.0);
+        vec3 drift = vec3(uWindDir.x, 0.0, uWindDir.y) * uWind * mix(1.6, 1.2, isSnow) * uTime;
+        vec3 p = aSeed.xyz * box - vec3(0.0, uTime * speed * (0.8 + 0.4 * aSeed.w), 0.0) + drift;
+        p.xz += isSnow * vec2(sin(uTime * 0.7 + aSeed.x * 40.0), cos(uTime * 0.6 + aSeed.z * 40.0)) * 0.35;
+        p = mod(p - uCam + box * 0.5, box) + uCam - box * 0.5;
+        float on = isSnow > 0.5 ? step(aSeed.y * 0.999, uSnow) : step(aSeed.y * 0.999, uRainA);
+        vec3 fall = normalize(vec3(uWindDir.x * uWind * 0.25, -1.0, uWindDir.y * uWind * 0.25));
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        vec3 axis = (viewMatrix * vec4(fall, 0.0)).xyz;
+        vec2 side = normalize(vec2(-axis.y, axis.x) + 1e-5);
+        float len = mix(0.34, 0.022, isSnow), wid = mix(0.0065, 0.022, isSnow);
+        mv.xy += side * position.x * wid;
+        mv.xyz += axis * position.y * len * (1.0 - isSnow) + vec3(0.0, position.y * len, 0.0) * isSnow;
+        vUv = position.xy + vec2(0.5, 0.0); vA = on; vSnowV = isSnow;
+        vWPos = p;
+        gl_Position = projectionMatrix * mv;
+        if (on < 0.5 || p.y < uWaterY - 0.02) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      }`,
+    fragmentShader: `${GLSL_COMMON}
+      uniform vec3 uLit; varying vec2 vUv; varying float vA; varying float vSnowV;
+      void main() {
+        float a = vSnowV > 0.5 ? smoothstep(0.5, 0.2, length(vUv - vec2(0.5, 0.5))) * 0.9 : (1.0 - abs(vUv.x - 0.5) * 2.0) * 0.42;
+        gl_FragColor = vec4(uLit * (vSnowV > 0.5 ? 1.2 : 0.9), a * vA);
+      }`,
+    transparent: true, depthWrite: false,
+  });
+  precipMesh = new THREE.Mesh(g, m);
+  precipMesh.frustumCulled = false; precipMesh.layers.set(LAYER.ABOVE); precipMesh.renderOrder = 20;
+  scene.add(precipMesh);
+}
+function updatePrecip() {
+  const u = precipMesh.material.uniforms;
+  u.uCam.value.copy(camera.position);
+  u.uSnow.value = env.snow; u.uRainA.value = env.rain;
+  u.uLit.value.copy(env.skyCol).multiplyScalar(0.6 * env.hemiMul).addScalar(0.05);
+  precipMesh.visible = (env.snow + env.rain) > 0.02;
+}
+// ---------- quality: resolution scale first, then Low; recover when fast ----------
+const QA = { ema: 16, slowT: 0, fastT: 0, lastAlloc: 0 };
+function setQuality(q) {
+  if (!QUALITY[q]) return;
+  P.quality = q;
+  const sm = QUALITY[q].shadow;
+  if (sunLight.shadow.mapSize.x !== sm) { sunLight.shadow.mapSize.set(sm, sm); if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; } }
+  allocTargets();
+  if (window.GUI_REFRESH) GUI_REFRESH();
+}
+function autoQuality(realDt) {
+  if (!P.autoDrop || TEST) return;
+  const ms = realDt * 1000;
+  QA.ema = lerp(QA.ema, ms, 0.05);
+  const now = performance.now();
+  if (QA.ema > 22) { QA.slowT += realDt; QA.fastT = 0; } else if (QA.ema < 14.5) { QA.fastT += realDt; QA.slowT = 0; } else { QA.slowT = Math.max(0, QA.slowT - realDt); QA.fastT = Math.max(0, QA.fastT - realDt); }
+  if (now - QA.lastAlloc < 1200) return;
+  if (QA.slowT > 0.8) {
+    if (resScale > 0.62) { resScale = Math.max(0.6, resScale - 0.1); QA.lastAlloc = now; QA.slowT = 0; allocTargets(); }
+    else if (P.quality === 'High') { QA.lastAlloc = now; QA.slowT = 0; setQuality('Low'); toast('Quality — Low'); }
+  } else if (QA.fastT > 3) {
+    if (resScale < 0.99) { resScale = Math.min(1, resScale + 0.1); QA.lastAlloc = now; QA.fastT = 0; allocTargets(); }
+    else if (P.quality === 'Low' && QA.fastT > 6) { QA.lastAlloc = now; QA.fastT = 0; setQuality('High'); }
+  }
+}
+
 /* =====================================================================================
    14. GUI, QUALITY, MAIN LOOP
    ===================================================================================== */
@@ -5230,7 +5805,7 @@ function resize() {
   renderer.setSize(W, H, false);
   camera.aspect = W / H;
   camera.updateProjectionMatrix();
-  if (compositeMat) allocTargets();
+  if (POST.mats.comp) allocTargets();
 }
 function setLoader(frac, label) {
   const l = document.getElementById('loader');
@@ -5238,6 +5813,13 @@ function setLoader(frac, label) {
   l.querySelector('.ls').textContent = label;
 }
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+let _toastT = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  if (!el || !KOI.ready) return;
+  el.textContent = msg; el.classList.add('on');
+  clearTimeout(_toastT); _toastT = setTimeout(() => el.classList.remove('on'), 2200);
+}
 
 function updateShadows() {
   // shadow map every other frame, rendered through a camera that sees every layer
@@ -5257,6 +5839,7 @@ function renderFrame() {
   updateWind(t);
   updateEnvironment();
   updateMountains();
+  updatePrecip();
   skyMesh.position.copy(camera.position);
   // water simulation, shadows
   stepWaterSim(clock.dt);
@@ -5276,12 +5859,7 @@ function renderFrame() {
   if (under) renderer.setClearColor(G.uInscatter.value, 0); else renderer.setClearColor(0x000000, 0);
   renderer.clear(true, true, false);
   renderer.render(scene, camera);
-  // composite
-  compositeMat.uniforms.tHDR.value = RT.main.texture;
-  compositeMat.uniforms.uExposure.value = P.exposure * env.exposure / 0.9;
-  compositeMat.uniforms.uVignette.value = P.vignette;
-  compositeMat.uniforms.uGrain.value = P.grain;
-  fsPass(compositeMat, null);
+  renderPost(clock.realDt || clock.dt);
   frameInfo.calls = renderer.info.render.calls; frameInfo.tris = renderer.info.render.triangles;
 }
 
@@ -5293,11 +5871,13 @@ function tick(now) {
 }
 function step(dt, realDt = dt) {
   const t0 = performance.now();
-  clock.dt = dt;
+  clock.dt = dt; clock.realDt = realDt;
   if (!P.freeze) clock.t += dt;
   clock.elapsed += dt;
   clock.frame++;
-  updateManualCamera(dt);
+  blendWeather(dt);
+  updateCamera(realDt, dt);
+  autoQuality(realDt);
   updateWaterfall(dt);
   updateWind(clock.t);
   updateKoi(P.freeze ? 0 : dt);
@@ -5318,7 +5898,10 @@ function step(dt, realDt = dt) {
 // Test / automation API
 const KOI = {
   ready: false, paused: false,
-  view(p, t) { lookAt(p[0], p[1], p[2], t[0], t[1], t[2]); },
+  view(p, t) { CAM.mode = 'Manual'; P.camMode = 'Manual'; lookAt(p[0], p[1], p[2], t[0], t[1], t[2]); },
+  tour(shot, u = 0.5) { CAM.mode = 'Cinematic'; CAM.shot = shot; CAM.lastShot = -1; const S = SHOTS.filter((x) => !(x.under && P.stayAbove))[shot]; CAM.t = S.dur * u; },
+  setWeather: (n, instant = true) => setWeather(n, instant),
+  mode: (m) => setCamMode(m),
   frames(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); this.sync(); },
   sync() { const px = new Uint8Array(4); renderer.setRenderTarget(null); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; },
   bench(n = 10) {
@@ -5398,6 +5981,7 @@ async function init() {
     ['Trees & bamboo', buildTrees],
     ['Water plants', () => { buildWaterPlants(); buildFalling(); }],
     ['Pond life', buildPondLife],
+    ['Weather', buildPrecip],
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['Koi', buildKoi],
@@ -5413,6 +5997,7 @@ async function init() {
   shadowCam.position.set(0, -5000, 0); shadowCam.lookAt(0, -6000, 0); shadowCam.layers.enableAll(); shadowCam.updateMatrixWorld();
   setupInput();
   lookAt(0.6, 2.4, 10.5, 0, -0.3, 0);
+  CAM.mode = TEST ? 'Manual' : P.camMode;
   G.tRipple.value = null;
   updateWind(0);
   updateEnvironment(true);
