@@ -1168,7 +1168,7 @@ function patchMaterial(mat, opts = {}) {
 	#pragma unroll_loop_end`);
     lfb = lfb.slice(0, dirIdx) + dirBlock + rest;
     fs = fs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_FRAG_PARS + (opts.float ? 'varying vec3 vFloatN;\n' : '') + GLSL_MATERIAL_PARS + (opts.fragPars || ''));
-    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
+    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + GLSL_WOOD_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
     fs = fs.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + GLSL_ROUGH + (opts.roughness || ''));
     fs = fs.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + (opts.metal || ''));
     fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GLSL_NORMAL + (opts.normal || ''));
@@ -1220,6 +1220,9 @@ uniform sampler2D tMossT;
 uniform float uTriScale;
 uniform float uMossAmt;
 uniform float uLichen;
+#endif
+#ifdef WOOD
+uniform float uWoodAge;
 #endif
 float uwSelfId = -1.0;
 float matAO = 1.0;
@@ -1298,6 +1301,20 @@ const GLSL_TRI_ALBEDO = /* glsl */`
   col = mix(col, col * vec3(0.5, 0.56, 0.33) + vec3(0.008, 0.012, 0.003), alg * (0.6 + 0.35 * n1));
   diffuseColor.rgb = col;
   matAO = mix(1.0, rc.a, 0.85);
+}
+#endif
+`;
+const GLSL_WOOD_ALBEDO = /* glsl */`
+#ifdef WOOD
+{
+  float up = gNrmW.y;
+  float n = fbmz(vWPos.xz * 3.1 + vWPos.y * 2.3);
+  float silver = smoothstep(0.35, 0.95, up) * (0.45 + 0.45 * n) * uWoodAge;
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.195, 0.18) * (0.75 + 0.5 * n), silver * 0.55);
+  float streak = (1.0 - abs(up)) * smoothstep(0.55, 0.8, fbmz(vec2((vWPos.x + vWPos.z) * 9.0, vWPos.y * 0.8)));
+  diffuseColor.rgb *= 1.0 - 0.35 * streak * uWoodAge;
+  float base = smoothstep(0.4, 0.0, vWPos.y - uWaterY);
+  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.45, 0.52, 0.35), base * 0.75);
 }
 #endif
 `;
@@ -1633,6 +1650,56 @@ function buildTerrain() {
   }
 }
 
+// ---------- distant mountains: layered ridges with aerial perspective ----------
+let mountainMat;
+function buildMountains() {
+  const layers = [[520, 70, 0.0, 0.55], [760, 130, 1.7, 0.72], [1150, 230, 3.1, 0.86]];
+  const parts = [];
+  for (const [R, Hm, seed, haze] of layers) {
+    const N = 360, pos = [], hz = [], idx = [];
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const n = fbm2(Math.cos(a) * 3 + seed * 7, Math.sin(a) * 3 + seed, 5, 90 + seed * 3);
+      const ridge = Math.pow(1 - Math.abs(fbm2(Math.cos(a) * 6 + seed, Math.sin(a) * 6, 3, 95)), 2);
+      const h = Hm * (0.35 + 0.65 * (0.5 + 0.5 * n)) * (0.75 + 0.35 * ridge);
+      const r = R * (1 + 0.08 * fbm2(Math.cos(a) * 2 + seed, Math.sin(a) * 2, 2, 97));
+      pos.push(Math.cos(a) * r, -10, Math.sin(a) * r, Math.cos(a) * r * 0.985, h, Math.sin(a) * r * 0.985);
+      hz.push(haze, haze);
+    }
+    for (let i = 0; i < N; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, c, b, b, c, d); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('aHaze', new THREE.Float32BufferAttribute(hz, 1));
+    g.setIndex(idx);
+    parts.push(g);
+  }
+  mountainMat = new THREE.ShaderMaterial({
+    uniforms: Object.assign({ uHor: { value: new THREE.Color() }, uLit: { value: new THREE.Color() } }, G),
+    vertexShader: `${GLSL_COMMON}
+      attribute float aHaze; varying float vHaze; varying float vH;
+      void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWPos = w.xyz; vHaze = aHaze; vH = position.y; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `${GLSL_COMMON}
+      uniform vec3 uHor; uniform vec3 uLit; varying float vHaze; varying float vH;
+      void main() {
+        float n = fbmz(vWPos.xz * 0.012) * 0.6 + fbmz(vWPos.xz * 0.05) * 0.4;
+        vec3 base = mix(vec3(0.05, 0.075, 0.05), vec3(0.09, 0.11, 0.08), n) * uLit;
+        base = mix(base, vec3(0.8, 0.83, 0.88) * uLit * 1.4, uSnowCover * smoothstep(0.35, 0.8, vH / 220.0 + (n - 0.5) * 0.3));
+        vec3 c = mix(base, uHor, vHaze * (0.85 + 0.15 * smoothstep(0.0, 200.0, vH)));
+        gl_FragColor = vec4(c, 0.0);
+      }`,
+    side: THREE.DoubleSide,
+  });
+  for (const g of parts) {
+    const m = new THREE.Mesh(g, mountainMat);
+    m.frustumCulled = false; m.layers.set(LAYER.ABOVE);
+    scene.add(m);
+  }
+}
+function updateMountains() {
+  mountainMat.uniforms.uHor.value.copy(G.uFogColor.value).lerp(env.skyCol, 0.35);
+  mountainMat.uniforms.uLit.value.copy(env.sunColor).multiplyScalar(env.sunI * 0.28).add(_tmpC.copy(env.skyCol).multiplyScalar(0.5));
+}
+
 /* =====================================================================================
    7. STONES
    ===================================================================================== */
@@ -1884,6 +1951,243 @@ function buildStones() {
 /* =====================================================================================
    8. BRIDGE + PAVILION
    ===================================================================================== */
+// ---------- shared wood helpers ----------
+// box with UVs that run along the grain (u along local X in metres / 1.1, v across / 0.3)
+function plank(len, w, h) {
+  const g = new THREE.BoxGeometry(len, h, w);
+  const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), ax = Math.abs(n.getX(i)), ay = Math.abs(n.getY(i));
+    if (ax > 0.5) uv.setXY(i, z / 0.3 + 0.37, y / 0.3);
+    else if (ay > 0.5) uv.setXY(i, x / 1.1, z / 0.3);
+    else uv.setXY(i, x / 1.1, y / 0.3 + 0.5);
+  }
+  return g;
+}
+// orient a plank between two points (x axis along the segment)
+function beamBetween(a, b, w, h, roll = 0) {
+  const d = new THREE.Vector3().subVectors(b, a), len = d.length();
+  const g = plank(len, w, h);
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), d.clone().normalize());
+  if (roll) q.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), roll));
+  g.applyQuaternion(q);
+  g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  return g;
+}
+function xform(g, x, y, z, yaw = 0, pitch = 0, roll = 0) {
+  g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ')), new THREE.Vector3(1, 1, 1)));
+  return g;
+}
+function woodMaterial(tint = 0xffffff, rough = 0.78, age = 1) {
+  const m = new THREE.MeshStandardMaterial({ color: tint, map: TEX.wood, normalMap: TEX.woodN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: rough, metalness: 0, envMapIntensity: 0.8 });
+  return patchMaterial(m, { wood: true, porosity: 0.9, extraUniforms: { uWoodAge: { value: age } }, key: 'wood' + age });
+}
+// ---------- bridge: arched wooden bridge across the waist of the pond ----------
+const BRIDGE = { a: new THREE.Vector3(2.9, 0, 1.95), b: new THREE.Vector3(2.35, 0, -3.65), width: 1.45, rise: 0.62, base: 0.26 };
+let bridgeDeckY = null;
+function buildBridge() {
+  const woodDeck = woodMaterial(0xcfc3b4, 0.8, 1.0), woodFrame = woodMaterial(0x9a8a78, 0.7, 0.8);
+  const bronze = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x4d5a45, roughness: 0.5, metalness: 0.8, envMapIntensity: 1 }), { key: 'bronze', porosity: 0.2 });
+  const span = BRIDGE.a.distanceTo(BRIDGE.b), half = span / 2;
+  const yaw = Math.atan2(-(BRIDGE.b.z - BRIDGE.a.z), BRIDGE.b.x - BRIDGE.a.x);
+  const cx = (BRIDGE.a.x + BRIDGE.b.x) / 2, cz = (BRIDGE.a.z + BRIDGE.b.z) / 2;
+  const deckY = (x) => BRIDGE.base + BRIDGE.rise * Math.pow(Math.max(0, 1 - sq(x / half)), 0.75);
+  bridgeDeckY = (wx, wz) => { const lx = (wx - cx) * Math.cos(yaw) - (wz - cz) * Math.sin(yaw); return deckY(lx); };
+  BRIDGE.cx = cx; BRIDGE.cz = cz; BRIDGE.yaw = yaw; BRIDGE.half = half;
+  const W = BRIDGE.width;
+  const deck = [], frame = [], piers = [], metal = [];
+  const nPl = Math.floor(span / 0.155);
+  for (let i = 0; i < nPl; i++) {
+    const x = -half + (i + 0.5) * (span / nPl);
+    const y = deckY(x), dy = (deckY(x + 0.01) - deckY(x - 0.01)) / 0.02;
+    const g = plank(W, 0.142, 0.05);
+    g.rotateY(Math.PI / 2);
+    g.rotateZ(Math.atan(dy));
+    g.translate(x, y - 0.025, (hash1(i) - 0.5) * 0.02);
+    deck.push(g);
+  }
+  const curve = (off, yOff, w, h, list, segs = 16) => {
+    for (let i = 0; i < segs; i++) {
+      const x0 = -half + (i / segs) * span, x1 = -half + ((i + 1) / segs) * span;
+      list.push(beamBetween(new THREE.Vector3(x0, deckY(x0) + yOff, off), new THREE.Vector3(x1, deckY(x1) + yOff, off), w, h));
+    }
+  };
+  for (const side of [-1, 1]) {
+    curve(side * (W / 2 - 0.08), -0.12, 0.12, 0.16, frame);
+    curve(side * (W / 2 + 0.02), 0.78, 0.075, 0.07, frame, 20);
+    curve(side * (W / 2 + 0.02), 0.36, 0.05, 0.045, frame, 20);
+    const nPost = 7;
+    for (let k = 0; k <= nPost; k++) {
+      const x = -half + 0.08 + (k / nPost) * (span - 0.16);
+      const y = deckY(x);
+      frame.push(xform(plank(0.11, 0.11, 0.86), x, y + 0.4, side * (W / 2 + 0.02)));
+      if (k === 0 || k === nPost) {
+        const gb = latheGeom([[0, 0], [0.07, 0], [0.075, 0.03], [0.065, 0.05], [0.085, 0.1], [0.07, 0.15], [0.035, 0.19], [0.012, 0.23], [0, 0.26]], 18);
+        metal.push(xform(gb, x, y + 0.83, side * (W / 2 + 0.02)));
+      }
+    }
+  }
+  for (const px of [-half * 0.46, half * 0.46]) {
+    const y = deckY(px);
+    frame.push(xform(plank(0.16, W + 0.25, 0.14), px, y - 0.2, 0));
+    for (const side of [-1, 1]) {
+      const lz = side * (W / 2 - 0.1);
+      const wx = cx + px * Math.cos(yaw) + lz * Math.sin(yaw), wz = cz - px * Math.sin(yaw) + lz * Math.cos(yaw);
+      const fl = terrainHeight(wx, wz) - 0.1;
+      const h = y - 0.2 - fl;
+      piers.push(xform(plank(0.15, 0.15, h), px, fl + h / 2, lz));
+      OBSTACLES.push({ x: wx, z: wz, r: 0.13, top: y, bottom: fl });
+    }
+  }
+  const place = (list, mat, layer, cast = true) => {
+    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(cx, 0, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(1, 1, 1)));
+    const m = new THREE.Mesh(g, mat);
+    m.castShadow = cast; m.receiveShadow = true; m.layers.set(layer);
+    scene.add(m);
+    return m;
+  };
+  place(deck, woodDeck, LAYER.ABOVE);
+  place(frame, woodFrame, LAYER.ABOVE);
+  place(piers, woodFrame, LAYER.BOTH);
+  place(metal, bronze, LAYER.ABOVE);
+}
+// ---------- pavilion (azumaya) with a curved tiled hip roof ----------
+const PAVILION = { x: 8.45, z: -0.75, yaw: 0.08, size: 2.6, post: 2.25, floor: 0.38 };
+function kawaraTextures() {
+  const N = 256, hf = new Float32Array(N * N), col = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const cu = fract(u * 4), row = fract(v * 4);
+    const ridge = Math.sin(cu * Math.PI * 2);
+    const lap = smoothstep(0.0, 0.08, row) * (0.6 + 0.4 * row);
+    const tileId = Math.floor(u * 4) + Math.floor(v * 4) * 4;
+    const t = hash1(tileId);
+    hf[y * N + x] = ridge * 0.55 + lap * 0.5 + fbm2(u * 32, v * 32, 2, 601, 32) * 0.03;
+    const shade = 0.75 + 0.35 * t + fbm2(u * 8, v * 8, 3, 602, 8) * 0.12;
+    const i = (y * N + x) * 4;
+    const c = [0.16, 0.17, 0.19].map((c) => c * shade * (0.85 + 0.15 * lap));
+    for (let k = 0; k < 3; k++) col[i + k] = clamp(Math.pow(c[k], 1 / 2.2), 0, 1) * 255;
+    col[i + 3] = 255;
+  }
+  TEX.kawara = dataTex(col, N, N, { srgb: true });
+  TEX.kawaraN = dataTex(heightToNormal(hf, N, N, 9), N, N);
+}
+function buildPavilion() {
+  kawaraTextures();
+  const P0 = PAVILION, S = P0.size, hs = S / 2;
+  const woodPost = woodMaterial(0xb0a08c, 0.72, 0.9), woodFloor = woodMaterial(0xd4c7b5, 0.8, 1.0);
+  const roofMat = patchMaterial(new THREE.MeshStandardMaterial({ map: TEX.kawara, normalMap: TEX.kawaraN, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.5, metalness: 0.2, envMapIntensity: 1.0, side: THREE.DoubleSide }), { key: 'roof', porosity: 0.3 });
+  const bronze = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x4d5a45, roughness: 0.45, metalness: 0.8 }), { key: 'bronze2', porosity: 0.2 });
+  const gy = terrainHeight(P0.x, P0.z);
+  const posts = [], floor = [], roofParts = [], metal = [];
+  const fy = gy + P0.floor;
+  PAVILION.floorY = fy;
+  for (let i = 0; i < 16; i++) floor.push(xform(plank(S + 0.3, 0.155, 0.05), 0, fy, -hs - 0.15 + (i + 0.5) * ((S + 0.3) / 16)));
+  for (const sx of [-1, 1]) floor.push(xform(plank(S + 0.3, 0.14, 0.14), 0, fy - 0.1, sx * (hs + 0.08)));
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    posts.push(xform(plank(0.15, 0.15, P0.post + 0.2), sx * hs, fy + P0.post / 2 - 0.05, sz * hs));
+    posts.push(xform(plank(0.16, 0.16, P0.floor + 0.2), sx * hs, gy + P0.floor / 2 - 0.08, sz * hs));
+  }
+  for (const [ax, az, rot] of [[0, -hs, 0], [0, hs, 0], [-hs, 0, Math.PI / 2], [hs, 0, Math.PI / 2]]) {
+    const g = plank(S + 0.3, 0.12, 0.18); g.rotateY(rot); g.translate(ax, fy + P0.post - 0.12, az); posts.push(g);
+    const g2 = plank(S, 0.06, 0.06); g2.rotateY(rot); g2.translate(ax, fy + P0.post - 0.42, az); posts.push(g2);
+  }
+  for (const [ax, az, rot] of [[0, -hs + 0.22, 0], [0, hs - 0.22, 0], [hs - 0.22, 0, Math.PI / 2]]) {
+    const g = plank(S - 0.35, 0.36, 0.05); g.rotateY(rot); g.translate(ax, fy + 0.42, az); floor.push(g);
+    for (const t of [-0.8, 0, 0.8]) { const l = plank(0.06, 0.25, 0.4); l.rotateY(rot); l.translate(ax + (rot ? 0 : t), fy + 0.2, az + (rot ? t : 0)); floor.push(l); }
+  }
+  // roof: concave pyramidal hip roof with upturned eave corners
+  const R0 = hs + 0.78, eaveY = fy + P0.post + 0.02, rise = 1.35;
+  const NU = 96, NV = 18, pos = [], uv = [], idx = [];
+  const roofPoint = (u, v, out, off = 0) => {
+    const side = Math.floor(u * 4) % 4, t = fract(u * 4);
+    const R = lerp(R0, 0.12, Math.pow(v, 0.85));
+    const along = (t * 2 - 1) * R;
+    let x, z;
+    if (side === 0) { x = along; z = -R; } else if (side === 1) { x = R; z = along; } else if (side === 2) { x = -along; z = R; } else { x = -R; z = -along; }
+    const corner = Math.pow(Math.abs(t * 2 - 1), 5);
+    const y = eaveY + rise * Math.pow(v, 1.7) + 0.2 * corner * Math.pow(1 - v, 2.2) + 0.02 * Math.sin(v * Math.PI) + off;
+    return out.set(x, y, z);
+  };
+  const tmp = new THREE.Vector3();
+  for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
+    const u = i / NU, v = j / NV;
+    roofPoint(u, v, tmp);
+    pos.push(tmp.x, tmp.y, tmp.z);
+    const t = fract(u * 4);
+    const R = lerp(R0, 0.12, Math.pow(v, 0.85));
+    uv.push(((t * 2 - 1) * R) / 1.1, (v * (R0 + rise)) / 1.25);
+  }
+  for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+    const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  const rg = new THREE.BufferGeometry();
+  rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  rg.setIndex(idx); rg.computeVertexNormals();
+  roofParts.push(rg);
+  for (const cu of [0, 0.25, 0.5, 0.75]) {
+    const pts = [];
+    for (let k = 0; k <= 14; k++) pts.push(roofPoint(cu + 0.0001, k / 14, new THREE.Vector3(), 0.05));
+    roofParts.push(tubeGeom(pts, () => 0.065, 8));
+  }
+  const eave = [];
+  for (let k = 0; k <= 96; k++) eave.push(roofPoint(k / 96, 0.0, new THREE.Vector3(), 0.0));
+  roofParts.push(tubeGeom(eave, () => 0.055, 8));
+  metal.push(xform(latheGeom([[0, 0], [0.12, 0], [0.13, 0.05], [0.09, 0.1], [0.12, 0.2], [0.1, 0.3], [0.05, 0.38], [0, 0.45]], 16), 0, eaveY + rise - 0.02, 0));
+  const ceil = [];
+  for (let k = 0; k < 24; k++) {
+    const u = (k + 0.5) / 24;
+    const a = roofPoint(u, 0.02, new THREE.Vector3(), -0.09), b = roofPoint(u, 0.9, new THREE.Vector3(), -0.09);
+    ceil.push(beamBetween(a, b, 0.05, 0.07));
+  }
+  const place = (list, mat, cast = true) => {
+    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(P0.x, 0, P0.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), P0.yaw), new THREE.Vector3(1, 1, 1)));
+    const m = new THREE.Mesh(g, mat);
+    m.castShadow = cast; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
+    scene.add(m);
+  };
+  place(posts.concat(ceil), woodPost); place(floor, woodFloor); place(roofParts, roofMat); place(metal, bronze);
+  const stones = [];
+  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    const g = rockGeometry(900 + sx * 3 + sz, 0.2, 0.12, 0.2, { flatTop: 0.7, square: 0.4, cuts: 4, segs: 16, rings: 8 });
+    const wx = P0.x + sx * hs * Math.cos(P0.yaw) + sz * hs * Math.sin(P0.yaw), wz = P0.z - sx * hs * Math.sin(P0.yaw) + sz * hs * Math.cos(P0.yaw);
+    placeGeom(g, wx, gy + 0.02, wz, 0.3);
+    stones.push(keepAttrs(g, ['position', 'normal']));
+  }
+  const sm = new THREE.Mesh(mergeGeoms(stones), rockMat); sm.castShadow = sm.receiveShadow = true; sm.layers.set(LAYER.ABOVE); scene.add(sm);
+}
+// ---------- pier: a small wooden deck over the south shore ----------
+const PIER = { x: 0.85, z: 2.75, len: 2.3, width: 1.0, y: 0.3, yaw: -0.18 };
+function buildPier() {
+  const deckM = woodMaterial(0xcdbfae, 0.82, 1.0), frameM = woodMaterial(0x958572, 0.72, 0.9);
+  const P0 = PIER, deck = [], frame = [], posts = [];
+  const n = Math.floor(P0.len / 0.16);
+  for (let i = 0; i < n; i++) deck.push(xform(plank(P0.width, 0.15, 0.045), 0, P0.y, -P0.len / 2 + (i + 0.5) * (P0.len / n), (hash1(i + 50) - 0.5) * 0.015));
+  for (const sx of [-1, 1]) frame.push(xform(plank(P0.len, 0.1, 0.14), sx * (P0.width / 2 - 0.05), P0.y - 0.095, 0, Math.PI / 2));
+  for (let k = 0; k < 3; k++) {
+    const lz = -P0.len / 2 + 0.12 + k * ((P0.len - 0.24) / 2);
+    frame.push(xform(plank(P0.width, 0.1, 0.1), 0, P0.y - 0.2, lz));
+    for (const sx of [-1, 1]) {
+      const lx = sx * (P0.width / 2 - 0.05);
+      const wx = P0.x + lx * Math.cos(P0.yaw) + lz * Math.sin(P0.yaw), wz = P0.z - lx * Math.sin(P0.yaw) + lz * Math.cos(P0.yaw);
+      const fl = terrainHeight(wx, wz) - 0.15, h = P0.y - fl;
+      posts.push(xform(plank(0.12, 0.12, h), lx, fl + h / 2, lz));
+      if (pondSDF(wx, wz) < 0) OBSTACLES.push({ x: wx, z: wz, r: 0.1, top: P0.y, bottom: fl });
+    }
+  }
+  const place = (list, mat, layer) => {
+    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+    g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(P0.x, 0, P0.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), P0.yaw), new THREE.Vector3(1, 1, 1)));
+    const m = new THREE.Mesh(g, mat);
+    m.castShadow = true; m.receiveShadow = true; m.layers.set(layer);
+    scene.add(m);
+  };
+  place(deck, deckM, LAYER.ABOVE); place(frame, frameM, LAYER.ABOVE); place(posts, frameM, LAYER.BOTH);
+}
 
 /* =====================================================================================
    9. VEGETATION & POND LIFE
@@ -3472,6 +3776,7 @@ function renderFrame() {
   G.uTime.value = t;
   updateWind(t);
   updateEnvironment();
+  updateMountains();
   skyMesh.position.copy(camera.position);
   // water simulation, shadows
   stepWaterSim(clock.dt);
@@ -3604,6 +3909,7 @@ async function init() {
     ['Pond floor', buildFloorGrid],
     ['Terrain', buildTerrain],
     ['Stones', buildStones],
+    ['Bridge & pavilion', () => { buildBridge(); buildPavilion(); buildPier(); buildMountains(); }],
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['Koi', buildKoi],
