@@ -448,6 +448,174 @@ function makeFinTexture() {
   TEX.fin = dataTex(out, N, N, { mips: true });
 }
 
+// ---------- foliage atlas: 4x4 cells of 512 px painted on a canvas ----------
+const CELL = { SAKURA: 0, SAKURA_AUT: 1, MAPLE: 2, BROAD: 3, BROAD_AUT: 4, PINE: 5, BAMBOO: 6, HEDGE: 7, FERN: 8, HYDRANGEA: 9, PETAL: 10, GRASS: 11, DEAD: 12, MAPLE_AUT: 13, AZALEA: 14, IRIS: 15 };
+function makeFoliageAtlas() {
+  const S = 512, cv = document.createElement('canvas');
+  cv.width = cv.height = S * 4;
+  const ctx = cv.getContext('2d');
+  const R = mulberry32(777);
+  const rnd = (a, b) => a + (b - a) * R();
+  const hsl = (h, s, l, a = 1) => `hsla(${h},${s}%,${l}%,${a})`;
+  const cell = (i, fn) => { ctx.save(); ctx.translate((i % 4) * S, Math.floor(i / 4) * S); ctx.beginPath(); ctx.rect(4, 4, S - 8, S - 8); ctx.clip(); fn(); ctx.restore(); };
+  const twig = (x0, y0, x1, y1, w, col = '#3a2a20') => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo((x0 + x1) / 2 + rnd(-30, 30), (y0 + y1) / 2 + rnd(-30, 30), x1, y1); ctx.stroke(); };
+  // generic leaf blade (pointing +y from the origin), optional serration
+  const leafPath = (L, W, serr = 0, tip = 0.5) => {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    const n = 14;
+    for (let k = 1; k <= n; k++) { const t = k / n; const w = W * Math.sin(Math.pow(t, tip) * Math.PI) * (1 + (serr && k % 2 ? serr : 0)); ctx.lineTo(-w, t * L); }
+    for (let k = n; k >= 0; k--) { const t = k / n; const w = W * Math.sin(Math.pow(t, tip) * Math.PI) * (1 + (serr && k % 2 ? serr : 0)); ctx.lineTo(w, t * L); }
+    ctx.closePath();
+  };
+  const leaf = (x, y, ang, L, W, c0, c1, serr = 0, tip = 0.5, vein = 'rgba(255,255,230,0.25)') => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+    const g = ctx.createLinearGradient(-W, 0, W, L); g.addColorStop(0, c0); g.addColorStop(1, c1);
+    ctx.fillStyle = g; leafPath(L, W, serr, tip); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = vein; ctx.lineWidth = Math.max(1, W * 0.08); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, L * 0.95); ctx.stroke();
+    ctx.restore();
+  };
+  const petal = (L, W) => {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.bezierCurveTo(-W, L * 0.3, -W * 0.95, L * 0.85, -W * 0.28, L);
+    ctx.lineTo(0, L * 0.86); ctx.lineTo(W * 0.28, L);
+    ctx.bezierCurveTo(W * 0.95, L * 0.85, W, L * 0.3, 0, 0); ctx.closePath();
+  };
+  const blossom = (x, y, r, rot, hue = 345, sat = 70, open = 1, lt = 0) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    for (let k = 0; k < 5; k++) {
+      ctx.save(); ctx.rotate((k / 5) * Math.PI * 2 + rnd(-0.1, 0.1));
+      const g = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, r);
+      g.addColorStop(0, hsl(hue, sat, 78 - lt)); g.addColorStop(0.55, hsl(hue, sat * 0.8, 90 - lt)); g.addColorStop(1, hsl(hue, sat, 84 - lt));
+      ctx.fillStyle = g; petal(r * open, r * 0.5); ctx.fill();
+      ctx.strokeStyle = hsl(hue, 40, 70, 0.5); ctx.lineWidth = 0.8; ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillStyle = hsl(hue, 70, 45); ctx.beginPath(); ctx.arc(0, 0, r * 0.16, 0, 7); ctx.fill();
+    for (let k = 0; k < 14; k++) {
+      const a = rnd(0, 7), l = r * rnd(0.25, 0.42);
+      ctx.strokeStyle = hsl(hue, 30, 88); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * l, Math.sin(a) * l); ctx.stroke();
+      ctx.fillStyle = '#e8c65a'; ctx.beginPath(); ctx.arc(Math.cos(a) * l, Math.sin(a) * l, 1.6, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  };
+  // 0 sakura blossom cluster
+  cell(CELL.SAKURA, () => {
+    twig(40, 470, 470, 60, 9); twig(250, 270, 120, 90, 5); twig(260, 260, 420, 380, 5);
+    for (let k = 0; k < 7; k++) leaf(rnd(100, 420), rnd(100, 420), rnd(0, 7), rnd(40, 60), rnd(12, 16), '#6b5a2e', '#8a6b36', 0.05);
+    for (let k = 0; k < 22; k++) { const a = rnd(0, 7), d = Math.sqrt(R()) * 190; blossom(256 + Math.cos(a) * d, 256 + Math.sin(a) * d, rnd(34, 50), rnd(0, 7), 345 + rnd(-8, 8), rnd(55, 80)); }
+    for (let k = 0; k < 8; k++) { ctx.fillStyle = hsl(340, 70, 62); ctx.beginPath(); ctx.ellipse(rnd(80, 430), rnd(80, 430), 9, 14, rnd(0, 3), 0, 7); ctx.fill(); }
+  });
+  // 1 cherry autumn leaves
+  cell(CELL.SAKURA_AUT, () => {
+    twig(40, 470, 470, 60, 8);
+    for (let k = 0; k < 16; k++) { const h = rnd(10, 42); leaf(rnd(90, 420), rnd(90, 420), rnd(0, 7), rnd(90, 130), rnd(28, 38), hsl(h, 80, 38), hsl(h + 10, 85, 52), 0.06); }
+  });
+  // 2 red Japanese maple
+  const maple = (x, y, s, rot, h0, l0) => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    for (let k = 0; k < 7; k++) { const a = (k - 3) * 0.42; const L = s * (k === 3 ? 1 : k === 2 || k === 4 ? 0.9 : k === 1 || k === 5 ? 0.72 : 0.5); leaf(0, 0, Math.PI + a, L, s * 0.16, hsl(h0 + rnd(-4, 4), 78, l0), hsl(h0 + 6, 82, l0 + 10), 0.18, 0.62, 'rgba(255,200,180,0.25)'); }
+    ctx.restore();
+  };
+  cell(CELL.MAPLE, () => { twig(30, 480, 480, 40, 5, '#4a2420'); for (let k = 0; k < 14; k++) maple(rnd(90, 420), rnd(90, 420), rnd(70, 100), rnd(0, 7), rnd(352, 368) % 360, rnd(26, 36)); });
+  cell(CELL.MAPLE_AUT, () => { twig(30, 480, 480, 40, 5, '#4a2420'); for (let k = 0; k < 11; k++) maple(rnd(90, 420), rnd(90, 420), rnd(70, 100), rnd(0, 7), rnd(8, 30), rnd(40, 50)); });
+  // 3 / 4 broadleaf cluster, summer and autumn
+  cell(CELL.BROAD, () => { twig(30, 480, 480, 40, 7); for (let k = 0; k < 18; k++) leaf(rnd(80, 430), rnd(80, 430), rnd(0, 7), rnd(90, 130), rnd(30, 42), hsl(rnd(85, 110), 45, rnd(20, 28)), hsl(rnd(80, 100), 50, rnd(30, 38)), 0.04); });
+  cell(CELL.BROAD_AUT, () => { twig(30, 480, 480, 40, 7); for (let k = 0; k < 14; k++) { const h = rnd(22, 50); leaf(rnd(80, 430), rnd(80, 430), rnd(0, 7), rnd(90, 130), rnd(30, 42), hsl(h, 80, 36), hsl(h + 8, 85, 50), 0.04); } });
+  // 5 pine needle tuft
+  cell(CELL.PINE, () => {
+    for (let k = 0; k < 150; k++) {
+      const a = -Math.PI / 2 + rnd(-1.1, 1.1), L = rnd(150, 230), x0 = 256 + rnd(-40, 40), y0 = 430 + rnd(-10, 20);
+      ctx.strokeStyle = hsl(rnd(95, 115), rnd(35, 50), rnd(14, 26)); ctx.lineWidth = rnd(2, 3.5);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(x0 + Math.cos(a) * L * 0.5, y0 + Math.sin(a) * L * 0.5 - 10, x0 + Math.cos(a) * L, y0 + Math.sin(a) * L); ctx.stroke();
+    }
+    ctx.fillStyle = '#5a4030'; ctx.beginPath(); ctx.ellipse(256, 440, 20, 34, 0, 0, 7); ctx.fill();
+  });
+  // 6 bamboo leaf spray
+  cell(CELL.BAMBOO, () => {
+    twig(256, 20, 250, 300, 4, '#6c7a3a');
+    for (let k = 0; k < 9; k++) { const y = rnd(40, 260); const side = k % 2 ? 1 : -1; leaf(254, y, side * rnd(0.3, 1.1) + (side > 0 ? 0 : 0), rnd(200, 250), rnd(16, 22), hsl(rnd(78, 92), 45, rnd(24, 30)), hsl(rnd(70, 85), 50, rnd(34, 42)), 0, 0.4); }
+  });
+  // 7 hedge: dense small glossy leaves
+  cell(CELL.HEDGE, () => { for (let k = 0; k < 150; k++) { const a = rnd(0, 7), d = Math.sqrt(R()) * 215; leaf(256 + Math.cos(a) * d, 256 + Math.sin(a) * d, rnd(0, 7), rnd(34, 50), rnd(12, 17), hsl(rnd(95, 120), 45, rnd(14, 22)), hsl(rnd(90, 110), 50, rnd(24, 32)), 0); } });
+  // 14 azalea: small leaves with a few pink flowers
+  cell(CELL.AZALEA, () => {
+    for (let k = 0; k < 130; k++) { const a = rnd(0, 7), d = Math.sqrt(R()) * 215; leaf(256 + Math.cos(a) * d, 256 + Math.sin(a) * d, rnd(0, 7), rnd(34, 48), rnd(12, 16), hsl(rnd(95, 120), 45, rnd(15, 22)), hsl(rnd(90, 110), 50, rnd(24, 30)), 0); }
+    for (let k = 0; k < 9; k++) { const a = rnd(0, 7), d = Math.sqrt(R()) * 170; blossom(256 + Math.cos(a) * d, 256 + Math.sin(a) * d, rnd(28, 36), rnd(0, 7), 328, 85, 1, 30); }
+  });
+  // 8 fern frond
+  cell(CELL.FERN, () => {
+    ctx.strokeStyle = '#3f5a22'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(256, 500); ctx.quadraticCurveTo(250, 260, 280, 20); ctx.stroke();
+    for (let k = 0; k < 22; k++) { const t = k / 22, y = 480 - t * 450, x = 256 + t * 20, L = 170 * Math.sin((1 - t) * Math.PI * 0.8 + 0.3); for (const sd of [-1, 1]) leaf(x, y, sd * 1.35 + Math.PI, L, 16 * (1 - t * 0.5), '#2e5a1c', '#4a7a2a', 0.25, 0.5); }
+  });
+  // 9 hydrangea mophead
+  cell(CELL.HYDRANGEA, () => {
+    for (let k = 0; k < 70; k++) {
+      const a = rnd(0, 7), d = Math.sqrt(R()) * 200, x = 256 + Math.cos(a) * d, y = 256 + Math.sin(a) * d, r = rnd(18, 26), hue = rnd(215, 265);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rnd(0, 7));
+      for (let q = 0; q < 4; q++) { ctx.rotate(Math.PI / 2); ctx.fillStyle = hsl(hue, rnd(35, 55), rnd(55, 70)); ctx.beginPath(); ctx.ellipse(0, r * 0.5, r * 0.42, r * 0.55, 0, 0, 7); ctx.fill(); }
+      ctx.fillStyle = hsl(hue, 30, 85); ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+  });
+  // 10 single sakura petal
+  cell(CELL.PETAL, () => {
+    ctx.translate(256, 470);
+    const g = ctx.createLinearGradient(0, 0, 0, -420); g.addColorStop(0, hsl(345, 60, 80)); g.addColorStop(0.5, hsl(345, 45, 92)); g.addColorStop(1, hsl(345, 60, 86));
+    ctx.rotate(Math.PI); ctx.fillStyle = g; petal(430, 190); ctx.fill();
+  });
+  // 11 grass tuft
+  cell(CELL.GRASS, () => {
+    for (let k = 0; k < 70; k++) {
+      const x0 = 256 + rnd(-60, 60), a = -Math.PI / 2 + rnd(-0.7, 0.7), L = rnd(250, 460), bend = rnd(-80, 80);
+      ctx.fillStyle = hsl(rnd(70, 100), rnd(35, 55), rnd(22, 38));
+      ctx.beginPath(); ctx.moveTo(x0 - 5, 510); ctx.quadraticCurveTo(x0 + Math.cos(a) * L * 0.5 + bend * 0.3, 510 + Math.sin(a) * L * 0.5, x0 + Math.cos(a) * L + bend, 510 + Math.sin(a) * L);
+      ctx.quadraticCurveTo(x0 + Math.cos(a) * L * 0.5 + bend * 0.3 + 6, 510 + Math.sin(a) * L * 0.5, x0 + 5, 510); ctx.fill();
+    }
+  });
+  // 12 dead leaves (winter remnants)
+  cell(CELL.DEAD, () => { twig(30, 480, 480, 40, 7); for (let k = 0; k < 8; k++) leaf(rnd(80, 430), rnd(80, 430), rnd(0, 7), rnd(80, 110), rnd(20, 30), hsl(rnd(20, 32), 45, rnd(18, 28)), hsl(28, 40, 32), 0.1); });
+  // 15 iris blades
+  cell(CELL.IRIS, () => {
+    for (let k = 0; k < 18; k++) {
+      const x0 = 256 + rnd(-50, 50), lean = rnd(-120, 120), L = rnd(380, 500);
+      ctx.fillStyle = hsl(rnd(95, 110), 40, rnd(22, 32));
+      ctx.beginPath(); ctx.moveTo(x0 - 9, 512); ctx.quadraticCurveTo(x0 + lean * 0.3, 512 - L * 0.6, x0 + lean, 512 - L); ctx.quadraticCurveTo(x0 + lean * 0.3 + 12, 512 - L * 0.6, x0 + 9, 512); ctx.fill();
+    }
+  });
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = MAX_ANISO;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  TEX.foliage = tex;
+}
+// bark: vertical fissures (u around, v along the branch in metres); cherry gets horizontal lenticels
+function makeBarkTexture(kind) {
+  const N = 256, col = new Uint8Array(N * N * 4), hf = new Float32Array(N * N);
+  const base = { cherry: [0.16, 0.09, 0.07], pine: [0.13, 0.11, 0.1], maple: [0.2, 0.19, 0.16], broad: [0.17, 0.15, 0.12], bamboo: [0.3, 0.36, 0.14] }[kind];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    let h = 0, c = 1;
+    if (kind === 'cherry') {
+      const len = smoothstep(0.75, 0.9, fbm2(u * 3, v * 40, 2, 701, 0) * 0.5 + 0.5);
+      h = fbm2(u * 6, v * 6, 4, 702, 6) * 0.3 - len * 0.6; c = 0.85 + 0.3 * fbm2(u * 4, v * 4, 3, 703, 4) + len * 0.5;
+    } else if (kind === 'pine') {
+      const w = voronoiTile(u, v * 0.5, 8, 704, 0.9);
+      h = smoothstep(0.0, 0.25, w.f2 - w.f1); c = 0.7 + 0.5 * hash2i(w.id, 1, 705) - (1 - h) * 0.45;
+    } else {
+      const f = Math.abs(fbm2(u * 10, v * 2.5, 4, 706, 10));
+      h = smoothstep(0.0, 0.3, f); c = 0.75 + 0.35 * h + 0.15 * fbm2(u * 20, v * 20, 2, 707, 20);
+    }
+    const i = (y * N + x) * 4;
+    for (let k = 0; k < 3; k++) col[i + k] = clamp(Math.pow(base[k] * c, 1 / 2.2), 0, 1) * 255;
+    col[i + 3] = 255;
+    hf[y * N + x] = h;
+  }
+  TEX['bark_' + kind] = dataTex(col, N, N, { srgb: true });
+  TEX['barkN_' + kind] = dataTex(heightToNormal(hf, N, N, 5), N, N);
+}
+
 /* =====================================================================================
    3. GEOMETRY HELPERS
    ===================================================================================== */
@@ -1137,6 +1305,7 @@ function patchMaterial(mat, opts = {}) {
     let vs = sh.vertexShader, fs = sh.fragmentShader;
     vs = vs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_VERT_PARS +
       (opts.float ? 'varying vec3 vFloatN;\n' : '') + (opts.vertPars || ''));
+    for (const [chunk, code] of Object.entries(opts.vAfter || {})) vs = vs.replace(`#include <${chunk}>`, `#include <${chunk}>\n` + code);
     vs = vs.replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\n' + (opts.vertNormal || ''));
     vs = vs.replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (opts.vertBegin || ''));
     vs = vs.replace('#include <project_vertex>', GLSL_PROJECT);
@@ -1168,10 +1337,10 @@ function patchMaterial(mat, opts = {}) {
 	#pragma unroll_loop_end`);
     lfb = lfb.slice(0, dirIdx) + dirBlock + rest;
     fs = fs.replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_FRAG_PARS + (opts.float ? 'varying vec3 vFloatN;\n' : '') + GLSL_MATERIAL_PARS + (opts.fragPars || ''));
-    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + GLSL_WOOD_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
+    fs = fs.replace('#include <map_fragment>', '#include <map_fragment>\n' + GLSL_ALBEDO + GLSL_TRI_ALBEDO + GLSL_WOOD_ALBEDO + GLSL_HEDGE_ALBEDO + (opts.albedo || '') + GLSL_WEATHER_ALBEDO.replace('POROSITY', porosity.toFixed(3)));
     fs = fs.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + GLSL_ROUGH + (opts.roughness || ''));
     fs = fs.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + (opts.metal || ''));
-    fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GLSL_NORMAL + (opts.normal || ''));
+    fs = fs.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + GLSL_NORMAL + GLSL_HEDGE_NORMAL + (opts.normal || ''));
     fs = fs.replace('#include <lights_fragment_begin>', GLSL_UNDERWATER_PREP + (opts.preLights || '') + lfb);
     fs = fs.replace('#include <lights_fragment_end>', GLSL_AMBIENT_ATTEN + '#include <lights_fragment_end>\n' + GLSL_SPEC_LOSS + (opts.postLights || ''));
     fs = fs.replace('#include <fog_fragment>', GLSL_FOG + (opts.final || ''));
@@ -1195,7 +1364,9 @@ function patchDepth(mesh, opts = {}) {
   dm.defines = Object.assign(defs, opts.defines || {});
   dm.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, G, opts.extraUniforms || {});
-    sh.vertexShader = sh.vertexShader
+    let dvs = sh.vertexShader;
+    for (const [chunk, code] of Object.entries(opts.vAfter || {})) dvs = dvs.replace(`#include <${chunk}>`, `#include <${chunk}>\n` + code);
+    sh.vertexShader = dvs
       .replace('#include <common>', '#include <common>\n' + GLSL_COMMON + GLSL_VERT_PARS + (opts.float ? 'varying vec3 vFloatN;\n' : '') + (opts.vertPars || ''))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + (opts.vertBegin || ''))
       .replace('#include <project_vertex>', GLSL_PROJECT);
@@ -1315,6 +1486,32 @@ const GLSL_WOOD_ALBEDO = /* glsl */`
   diffuseColor.rgb *= 1.0 - 0.35 * streak * uWoodAge;
   float base = smoothstep(0.4, 0.0, vWPos.y - uWaterY);
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.45, 0.52, 0.35), base * 0.75);
+}
+#endif
+`;
+const GLSL_HEDGE_ALBEDO = /* glsl */`
+#ifdef HEDGE
+{
+  vec3 p = vWPos * 7.0;
+  float n1 = fbmz(p.xz + p.y * 0.7), n2 = fbmz(p.xz * 2.9 - p.y * 1.3 + 3.0);
+  vec3 c = mix(vec3(0.022, 0.05, 0.016), vec3(0.06, 0.1, 0.03), n1) * (0.72 + 0.5 * n2);
+  float speck = step(0.83, hsh12(floor(vWPos.xz * 55.0) + floor(vWPos.y * 55.0) * 7.0));
+  c += speck * vec3(0.025, 0.04, 0.012);
+  float clump = smoothstep(0.25, 0.7, fbmz(vWPos.xz * 2.2 + vWPos.y * 1.4));
+  matAO = mix(0.5, 1.0, clump);
+  diffuseColor.rgb = c;
+}
+#endif
+`;
+const GLSL_HEDGE_NORMAL = /* glsl */`
+#ifdef HEDGE
+{
+  vec3 p = vWPos * 11.0;
+  float e = 0.35;
+  float h0 = fbmz(p.xz + p.y);
+  vec3 gN = vec3(fbmz(p.xz + vec2(e, 0.0) + p.y) - h0, 0.0, fbmz(p.xz + vec2(0.0, e) + p.y) - h0) * 2.2;
+  vec3 nW = normalize(gNrmW - gN);
+  normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
 }
 #endif
 `;
@@ -2192,6 +2389,875 @@ function buildPier() {
 /* =====================================================================================
    9. VEGETATION & POND LIFE
    ===================================================================================== */
+// ---------- foliage cards: instanced quads with canopy normals, wind, translucency, seasons ----------
+const CARD_VPARS = /* glsl */`
+attribute vec3 iCanopyN;
+attribute vec4 iCard;     // atlas cell, autumn cell, tint, random
+varying vec3 vCanopyN;
+varying float vTint;
+`;
+const CARD_UV = /* glsl */`
+#ifdef USE_MAP
+{
+  float cell = iCard.x;
+  #ifdef DECIDUOUS
+    if (fract(iCard.w * 3.71) < uAutumn * 1.1) cell = iCard.y;
+  #endif
+  vMapUv = uv * 0.25 + vec2(mod(cell, 4.0), 3.0 - floor(cell / 4.0)) * 0.25;
+}
+#endif
+`;
+const CARD_BEGIN = /* glsl */`
+#ifdef DECIDUOUS
+  transformed *= step(uAutumn * 0.42 + uSnowCover * 0.88, fract(iCard.w * 7.13));
+#endif
+vTint = iCard.z;
+`;
+const CARD_NRM = /* glsl */`
+vCanopyN = normalize((viewMatrix * vec4(iCanopyN, 0.0)).xyz);
+transformedNormal = normalize(mix(transformedNormal, vCanopyN, 0.7));
+`;
+const CARD_VEND = /* glsl */`
+vWNrm = normalize(mix(vWNrm, iCanopyN, 0.8));
+`;
+const CARD_FPARS = /* glsl */`
+varying vec3 vCanopyN;
+varying float vTint;
+`;
+const CARD_ALBEDO = /* glsl */`
+diffuseColor.rgb *= mix(vec3(0.42, 0.47, 0.42), vec3(1.1, 1.06, 1.0), vTint);
+`;
+const CARD_NORMAL = /* glsl */`
+normal = normalize(vCanopyN);
+`;
+const CARD_DEPTH_VPARS = /* glsl */`
+attribute vec4 iCard;
+`;
+function cardMaterial(key, deciduous) {
+  const m = new THREE.MeshStandardMaterial({ map: TEX.foliage, alphaTest: 0.42, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.62, metalness: 0, envMapIntensity: 0.7 });
+  return patchMaterial(m, {
+    wind: true, leaf: true, deciduous, key, porosity: 0.4, defines: { KEEP_ALPHA: '' },
+    vertPars: CARD_VPARS, vAfter: { uv_vertex: CARD_UV, defaultnormal_vertex: CARD_NRM }, vertBegin: CARD_BEGIN, vertEnd: CARD_VEND,
+    fragPars: CARD_FPARS, albedo: CARD_ALBEDO, normal: CARD_NORMAL,
+  });
+}
+// a set of cards collected by the generators, turned into one InstancedMesh
+class CardSet {
+  constructor(key, deciduous) { this.key = key; this.deciduous = deciduous; this.items = []; }
+  add(pos, facing, up, size, canopyN, cell, alt, wind, flutter, tint = Math.random()) {
+    this.items.push({ pos: pos.clone(), facing: facing.clone().normalize(), up: up.clone(), size, n: canopyN.clone().normalize(), cell, alt, wind, flutter, tint, rnd: Math.random() });
+  }
+  build(layer = LAYER.ABOVE) {
+    const n = this.items.length;
+    if (!n) return null;
+    const g = new THREE.PlaneGeometry(1, 1);
+    const cn = new Float32Array(n * 3), cd = new Float32Array(n * 4), wd = new Float32Array(n * 4);
+    const mesh = new THREE.InstancedMesh(g, cardMaterial(this.key, this.deciduous), n);
+    const m = new THREE.Matrix4(), x = new THREE.Vector3(), y = new THREE.Vector3(), z = new THREE.Vector3();
+    this.items.forEach((it, i) => {
+      z.copy(it.facing);
+      x.crossVectors(it.up, z); if (x.lengthSq() < 1e-6) x.set(1, 0, 0); x.normalize();
+      y.crossVectors(z, x).normalize();
+      m.makeBasis(x.multiplyScalar(it.size), y.multiplyScalar(it.size), z.multiplyScalar(it.size));
+      m.setPosition(it.pos);
+      mesh.setMatrixAt(i, m);
+      cn.set([it.n.x, it.n.y, it.n.z], i * 3);
+      cd.set([it.cell, it.alt, it.tint, it.rnd], i * 4);
+      wd.set([it.wind, it.flutter, it.rnd, 0], i * 4);
+    });
+    g.setAttribute('iCanopyN', new THREE.InstancedBufferAttribute(cn, 3));
+    g.setAttribute('iCard', new THREE.InstancedBufferAttribute(cd, 4));
+    g.setAttribute('aWind', new THREE.InstancedBufferAttribute(wd, 4));
+    patchDepth(mesh, { wind: true, map: TEX.foliage, alphaTest: 0.42, vertPars: CARD_DEPTH_VPARS + (this.deciduous ? '#define DECIDUOUS\n' : ''), vAfter: { uv_vertex: CARD_UV }, vertBegin: this.deciduous ? '#ifdef DECIDUOUS\ntransformed *= step(uAutumn * 0.42 + uSnowCover * 0.88, fract(iCard.w * 7.13));\n#endif\n' : '', key: 'card' + this.deciduous });
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.layers.set(layer);
+    mesh.computeBoundingSphere();
+    scene.add(mesh);
+    return mesh;
+  }
+}
+// ---------- branches ----------
+const BARK = {};
+function barkMaterial(kind, rep = [1.5, 1.2]) {
+  const t = TEX['bark_' + kind].clone(), n = TEX['barkN_' + kind].clone();
+  t.repeat.set(rep[0], rep[1]); n.repeat.set(rep[0], rep[1]); t.needsUpdate = n.needsUpdate = true;
+  return patchMaterial(new THREE.MeshStandardMaterial({ map: t, normalMap: n, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.9, metalness: 0, envMapIntensity: 0.7 }), { wind: true, porosity: 1, key: 'bark' + kind });
+}
+function addBranchesMesh(tubes, kind, rep) {
+  if (!tubes.length) return null;
+  const g = mergeGeoms(tubes.map((t) => keepAttrs(t, ['position', 'normal', 'uv', 'aWind'])));
+  const m = new THREE.Mesh(g, barkMaterial(kind, rep));
+  patchDepth(m, { wind: true, key: 'bark' });
+  m.castShadow = true; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
+  scene.add(m);
+  return m;
+}
+// tube along a grown path; wind weight ramps from w0 to w1
+function woodTube(pts, r0, r1, radial, w0, w1, seed) {
+  const g = tubeGeom(pts, (t) => lerp(r0, r1, t), radial, true);
+  const ring = radial + 1, nR = pts.length;
+  fillAttr(g, 'aWind', 4, (x, y, z, i) => { const t = Math.min(Math.floor(i / ring), nR - 1) / Math.max(nR - 1, 1); return [lerp(w0, w1, t), 0, seed, 0]; });
+  return g;
+}
+function growPath(R, p0, dir, len, segs, wiggle, tropism, droop = 0) {
+  const pts = [p0.clone()], d = dir.clone().normalize(), p = p0.clone();
+  for (let i = 1; i <= segs; i++) {
+    d.x += (R() - 0.5) * wiggle; d.y += (R() - 0.5) * wiggle * 0.5; d.z += (R() - 0.5) * wiggle;
+    d.y += tropism * (len / segs) - droop * (i / segs) * (len / segs);
+    d.normalize();
+    p.addScaledVector(d, len / segs);
+    pts.push(p.clone());
+  }
+  return pts;
+}
+const _up = new THREE.Vector3(0, 1, 0);
+function randDirAround(R, axis, angle) {
+  const a = R() * Math.PI * 2;
+  const t = new THREE.Vector3().crossVectors(axis, Math.abs(axis.y) < 0.9 ? _up : new THREE.Vector3(1, 0, 0)).normalize();
+  const b = new THREE.Vector3().crossVectors(axis, t);
+  return axis.clone().multiplyScalar(Math.cos(angle)).addScaledVector(t, Math.sin(angle) * Math.cos(a)).addScaledVector(b, Math.sin(angle) * Math.sin(a)).normalize();
+}
+function randUnit(R) { const z = R() * 2 - 1, a = R() * Math.PI * 2, s = Math.sqrt(1 - z * z); return new THREE.Vector3(Math.cos(a) * s, z, Math.sin(a) * s); }
+// generic recursive tree: returns tubes; leaf clusters emitted into a CardSet
+function growTree(o) {
+  const R = mulberry32(o.seed);
+  const tubes = [];
+  const base = new THREE.Vector3(o.x, terrainHeight(o.x, o.z) - 0.05, o.z);
+  const canopyC = base.clone().add(new THREE.Vector3(o.lean ? o.lean.x * o.height * 0.5 : 0, o.height * 0.62, o.lean ? o.lean.z * o.height * 0.5 : 0));
+  const rec = (p, dir, len, r, depth, w0) => {
+    const segs = Math.max(3, Math.round(len / (depth === 0 ? 0.35 : 0.22)));
+    const pts = growPath(R, p, dir, len, segs, o.wiggle[depth], o.tropism[depth], o.droop ? o.droop[depth] : 0);
+    const w1 = w0 + o.windGain[depth] * len;
+    tubes.push(woodTube(pts, r, r * o.taper, o.radial[depth], w0, w1, R()));
+    if (depth < o.depth) {
+      const nC = o.children[depth];
+      for (let k = 0; k < nC; k++) {
+        const t = lerp(o.childStart[depth], 0.98, nC === 1 ? 1 : k / (nC - 1)) * (0.94 + R() * 0.06);
+        const idx = Math.min(Math.floor(t * (pts.length - 1)), pts.length - 2);
+        const pp = pts[idx].clone().lerp(pts[idx + 1], R());
+        const pd = new THREE.Vector3().subVectors(pts[idx + 1], pts[idx]).normalize();
+        let cd = randDirAround(R, pd, o.angle[depth] * (0.75 + 0.5 * R()));
+        if (o.spread && depth === 0) { const out = new THREE.Vector3(pp.x - base.x, 0, pp.z - base.z); if (out.lengthSq() > 1e-4) cd.lerp(out.normalize().setY(cd.y), o.spread).normalize(); }
+        rec(pp, cd, len * o.lenRatio[depth] * (0.75 + 0.5 * R()), r * lerp(1, o.taper, t) * o.radRatio, depth + 1, lerp(w0, w1, t));
+      }
+    }
+    if (depth >= o.leafDepth && o.cards) {
+      const n = o.leavesPer[depth] || 3;
+      for (let k = 0; k < n; k++) {
+        const t = lerp(0.35, 1, R());
+        const idx = Math.min(Math.floor(t * (pts.length - 1)), pts.length - 1);
+        const lp = pts[idx].clone().add(randUnit(R).multiplyScalar(o.leafSpread));
+        const cn = lp.clone().sub(canopyC); cn.y += o.canopyUp || 0.5; cn.normalize();
+        const facing = cn.clone().lerp(randUnit(R), 0.55).normalize();
+        o.cards.add(lp, facing, randUnit(R), o.leafSize * (0.75 + 0.5 * R()), cn, o.cell, o.alt, lerp(w0, w1, t) + 0.1, 1);
+      }
+    }
+  };
+  const dir = new THREE.Vector3(o.lean ? o.lean.x : 0, 1, o.lean ? o.lean.z : 0).normalize();
+  for (let s = 0; s < (o.stems || 1); s++) {
+    const d = s === 0 ? dir : randDirAround(R, dir, 0.25);
+    const p = base.clone().add(new THREE.Vector3((R() - 0.5) * 0.2 * s, 0, (R() - 0.5) * 0.2 * s));
+    rec(p, d, o.trunkLen * (s === 0 ? 1 : 0.8), o.trunkR * (s === 0 ? 1 : 0.7), 0, 0);
+  }
+  return tubes;
+}
+// scatter cards through an ellipsoidal canopy volume; interior cards are darker (occlusion)
+function fillCanopy(cards, R, c, rx, ry, rz, count, size, cell, alt, wind, opts = {}) {
+  for (let k = 0; k < count; k++) {
+    const d = randUnit(R);
+    if (opts.flatBottom && d.y < -0.35) d.y = -0.35 - (d.y + 0.35) * 0.3;
+    const rad = Math.pow(R(), 0.35);
+    const p = new THREE.Vector3(c.x + d.x * rx * rad, c.y + d.y * ry * rad, c.z + d.z * rz * rad);
+    const n = new THREE.Vector3(d.x / rx, d.y / ry + (opts.up || 0.25), d.z / rz).normalize();
+    const facing = n.clone().lerp(randUnit(R), 0.5).normalize();
+    const tint = clamp(0.15 + 0.85 * rad * (0.75 + 0.25 * (d.y * 0.5 + 0.5)) + (R() - 0.5) * 0.15, 0, 1);
+    cards.add(p, facing, randUnit(R), size * (0.75 + 0.5 * R()), n, cell, alt, wind * (0.6 + 0.4 * rad), 1, tint);
+  }
+}
+// ---------- species ----------
+const VEG = { cherryTubes: [], mapleTubes: [], pineTubes: [], broadTubes: [], petalSources: [] };
+function buildWeepingCherry(cards) {
+  const R = mulberry32(31);
+  const x = -7.3, z = -3.3, gy = terrainHeight(x, z);
+  const tubes = [];
+  const lean = new THREE.Vector3(0.22, 1, 0.1).normalize();
+  const trunk = growPath(R, new THREE.Vector3(x, gy - 0.05, z), lean, 2.3, 8, 0.25, 0);
+  tubes.push(woodTube(trunk, 0.21, 0.13, 12, 0, 0.12, 1));
+  const top = trunk[trunk.length - 1];
+  const canopyC = top.clone().add(new THREE.Vector3(0.4, -0.3, 0.2));
+  const limbs = 7;
+  for (let l = 0; l < limbs; l++) {
+    const a = (l / limbs) * Math.PI * 2 + R() * 0.5;
+    const start = trunk[5 + Math.floor(R() * 3)].clone();
+    const dir = new THREE.Vector3(Math.cos(a), 0.9 + R() * 0.5, Math.sin(a)).normalize();
+    // limbs rise, arch over and droop
+    const limb = growPath(R, start, dir, 1.6 + R() * 0.8, 9, 0.25, 0.1, 1.1);
+    tubes.push(woodTube(limb, 0.085, 0.03, 8, 0.12, 0.5, R()));
+    for (let i = 2; i < limb.length; i++) for (let c = 0; c < 5; c++) {
+      const lp = limb[i].clone().lerp(limb[i - 1], R()).add(randUnit(R).multiplyScalar(0.14));
+      const cn = lp.clone().sub(canopyC).normalize();
+      cards.add(lp, cn.clone().lerp(randUnit(R), 0.5).normalize(), randUnit(R), 0.22 + R() * 0.1, cn, CELL.SAKURA, CELL.SAKURA_AUT, 0.4 + i * 0.05, 1, 0.55 + R() * 0.45);
+    }
+    // pendulous branchlets hang from the arching limb
+    for (let k = 3; k < limb.length; k++) {
+      const nStr = 2 + Math.floor(R() * 3);
+      for (let q = 0; q < nStr; q++) {
+        const p0 = limb[k].clone().add(randUnit(R).multiplyScalar(0.08));
+        const out = new THREE.Vector3(p0.x - x, 0, p0.z - z).normalize();
+        const hang = 0.9 + R() * 1.5 + (limb[k].y - gy - 2) * 0.4;
+        const pts = [p0.clone()];
+        const p = p0.clone(), d = out.clone().multiplyScalar(0.6).setY(0.35).normalize();
+        const segs = 9;
+        for (let i = 1; i <= segs; i++) {
+          d.y -= 0.42; d.x += (R() - 0.5) * 0.15; d.z += (R() - 0.5) * 0.15; d.normalize();
+          p.addScaledVector(d, hang / segs);
+          p.y = Math.max(p.y, gy + 0.35 + (terrainHeight(p.x, p.z) - gy));
+          pts.push(p.clone());
+        }
+        tubes.push(woodTube(pts, 0.012, 0.004, 4, 0.5, 1.4, R()));
+        // blossoms all along the strand
+        for (let i = 1; i < pts.length; i++) {
+          for (let c = 0; c < 2; c++) {
+            const lp = pts[i].clone().lerp(pts[i - 1], R()).add(randUnit(R).multiplyScalar(0.05));
+            const cn = lp.clone().sub(canopyC); cn.y *= 0.4; cn.y += 0.2; cn.normalize();
+            const facing = new THREE.Vector3(Math.cos(R() * 7), (R() - 0.5) * 0.6, Math.sin(R() * 7)).normalize().lerp(cn, 0.4).normalize();
+            cards.add(lp, facing, new THREE.Vector3(0, -1, 0).lerp(randUnit(R), 0.3), 0.19 + R() * 0.08, cn, CELL.SAKURA, CELL.SAKURA_AUT, lerp(0.5, 1.5, i / pts.length), 1);
+          }
+        }
+        VEG.petalSources.push(pts[Math.floor(pts.length / 2)]);
+      }
+    }
+  }
+  VEG.cherryTubes.push(...tubes);
+  OBSTACLES.push({ x, z, r: 0.3, top: 5, bottom: -5 });
+}
+// someiyoshino: short trunk, wide spreading limbs, umbrella of blossom
+function buildCherry(cards) {
+  const R = mulberry32(57);
+  const x = 7.7, z = 4.2, gy = terrainHeight(x, z);
+  const tubes = [];
+  const trunk = growPath(R, new THREE.Vector3(x, gy - 0.05, z), new THREE.Vector3(0.05, 1, -0.05), 1.5, 6, 0.12, 0);
+  tubes.push(woodTube(trunk, 0.24, 0.17, 12, 0, 0.08, 1));
+  const top = trunk[trunk.length - 1];
+  for (let l = 0; l < 5; l++) {
+    const a = (l / 5) * Math.PI * 2 + R() * 0.6;
+    const limb = growPath(R, top, new THREE.Vector3(Math.cos(a), 0.9, Math.sin(a)), 2.2 + R() * 0.6, 7, 0.25, -0.04, 0.12);
+    tubes.push(woodTube(limb, 0.12, 0.05, 8, 0.08, 0.45, R()));
+    for (let b = 0; b < 4; b++) {
+      const i = 2 + Math.floor(R() * (limb.length - 3));
+      const d = new THREE.Vector3().subVectors(limb[i + 1], limb[i]).normalize();
+      const br = growPath(R, limb[i], randDirAround(R, d, 0.7), 0.9 + R() * 0.6, 4, 0.4, 0.05, 0.1);
+      tubes.push(woodTube(br, 0.05, 0.015, 5, 0.3, 0.8, R()));
+    }
+  }
+  const c = top.clone().add(new THREE.Vector3(0, 1.6, 0));
+  fillCanopy(cards, R, c, 2.9, 1.35, 2.9, 2600, 0.42, CELL.SAKURA, CELL.SAKURA_AUT, 0.7, { flatBottom: true, up: 0.5 });
+  VEG.cherryTubes.push(...tubes);
+  VEG.petalSources.push(c.clone());
+  OBSTACLES.push({ x, z, r: 0.3, top: 5, bottom: -5 });
+}
+function buildMaple(cards, x, z, seed, scale = 1) {
+  const o = {
+    seed, x, z, height: 3.4 * scale, trunkLen: 1.0 * scale, trunkR: 0.09 * scale, taper: 0.5, depth: 3, stems: 3,
+    wiggle: [0.3, 0.4, 0.5, 0.5], tropism: [0.1, 0.04, 0.0, 0], droop: [0, 0.1, 0.2, 0.2], windGain: [0.08, 0.2, 0.4, 0.7],
+    children: [4, 4, 5], childStart: [0.4, 0.3, 0.2], angle: [0.7, 0.8, 0.7], lenRatio: [1.1, 0.62, 0.55], radRatio: 0.55, radial: [10, 6, 4, 4],
+    spread: 0.5, cards, leafDepth: 2, leavesPer: [0, 0, 3, 5], leafSpread: 0.2, leafSize: 0.42 * scale, canopyUp: 0.6, cell: CELL.MAPLE, alt: CELL.MAPLE_AUT,
+  };
+  VEG.mapleTubes.push(...growTree(o));
+  const R = mulberry32(seed + 1), gy = terrainHeight(x, z);
+  fillCanopy(cards, R, new THREE.Vector3(x, gy + 2.2 * scale, z), 1.7 * scale, 1.05 * scale, 1.7 * scale, Math.round(700 * scale * scale), 0.4 * scale, CELL.MAPLE, CELL.MAPLE_AUT, 0.7, { flatBottom: true });
+}
+// Japanese black pine with cloud-pruned pads
+function buildPine(cards, x, z, seed, lean, h = 3.6) {
+  const R = mulberry32(seed);
+  const gy = terrainHeight(x, z);
+  const tubes = [];
+  const trunk = growPath(R, new THREE.Vector3(x, gy - 0.05, z), lean.clone().normalize(), h, 10, 0.35, 0.06);
+  tubes.push(woodTube(trunk, 0.17, 0.06, 10, 0, 0.3, 1));
+  const nPads = 6 + Math.floor(R() * 3);
+  for (let k = 0; k < nPads; k++) {
+    const t = 0.35 + (k / nPads) * 0.65;
+    const idx = Math.min(Math.floor(t * (trunk.length - 1)), trunk.length - 1);
+    const a = k * 2.4 + R();
+    const dir = new THREE.Vector3(Math.cos(a), 0.15 - (1 - t) * 0.1, Math.sin(a)).normalize();
+    const len = (1.3 - t * 0.8) * (0.8 + 0.4 * R()) * (h / 3.6);
+    const br = growPath(R, trunk[idx], dir, len, 5, 0.3, 0.05);
+    tubes.push(woodTube(br, 0.05 * (1.2 - t * 0.6), 0.02, 6, 0.1 + t * 0.2, 0.45 + t * 0.3, R()));
+    // cloud pad: flattened dome of upward needle tufts
+    const c = br[br.length - 1];
+    const pr = 0.35 + len * 0.35;
+    for (let q = 0; q < 55; q++) {
+      const ang = R() * Math.PI * 2, rad = Math.sqrt(R()) * pr;
+      const px = c.x + Math.cos(ang) * rad, pz = c.z + Math.sin(ang) * rad;
+      const py = c.y + 0.02 + (1 - sq(rad / pr)) * 0.22 * (0.6 + 0.4 * R());
+      const cn = new THREE.Vector3(Math.cos(ang) * rad / pr * 0.8, 1, Math.sin(ang) * rad / pr * 0.8).normalize();
+      const facing = new THREE.Vector3(Math.cos(R() * 7), 0.25, Math.sin(R() * 7)).normalize();
+      cards.add(new THREE.Vector3(px, py, pz), facing, new THREE.Vector3(0, 1, 0).lerp(cn, 0.3), 0.26 + R() * 0.1, cn, CELL.PINE, CELL.PINE, 0.4 + t * 0.3, 0.3);
+    }
+  }
+  VEG.pineTubes.push(...tubes);
+}
+function buildBroadleaf(cards, x, z, seed, h) {
+  const R = mulberry32(seed);
+  const o = {
+    seed, x, z, height: h, trunkLen: h * 0.45, trunkR: 0.16 + h * 0.014, taper: 0.5, depth: 2, stems: 1,
+    wiggle: [0.06, 0.25, 0.35], tropism: [0.02, 0.1, 0.05], droop: [0, 0.02, 0.1], windGain: [0.02, 0.06, 0.2],
+    children: [6, 4], childStart: [0.55, 0.35], angle: [0.7, 0.65], lenRatio: [0.55, 0.5], radRatio: 0.55, radial: [10, 6, 4],
+    spread: 0.3, cards: null, leafDepth: 9,
+  };
+  VEG.broadTubes.push(...growTree(o));
+  const gy = terrainHeight(x, z);
+  // two to four overlapping canopy lobes so no two crowns share a silhouette
+  const lobes = 2 + Math.floor(R() * 3);
+  for (let l = 0; l < lobes; l++) {
+    const a = R() * Math.PI * 2, off = l === 0 ? 0 : h * (0.12 + R() * 0.12);
+    const c = new THREE.Vector3(x + Math.cos(a) * off, gy + h * (0.58 + R() * 0.2), z + Math.sin(a) * off);
+    const sc = l === 0 ? 1 : 0.55 + R() * 0.3;
+    const rx = h * (0.24 + R() * 0.1) * sc, ry = h * (0.2 + R() * 0.08) * sc, rz = h * (0.24 + R() * 0.1) * sc;
+    fillCanopy(cards, R, c, rx, ry, rz, Math.round(h * h * 11 * sc * sc), 0.75 + h * 0.03, CELL.BROAD, CELL.BROAD_AUT, 0.35);
+  }
+}
+// ---------- bamboo grove (Phyllostachys): segmented culms, nodes, drooping leaf sprays ----------
+function makeBambooTexture() {
+  const N = 128, col = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = x / N, v = y / N;
+    const node = smoothstep(0.035, 0.0, v) + smoothstep(0.965, 1.0, v);
+    const bloom = smoothstep(0.12, 0.04, v) * 0.5;                // white powder band below the node
+    const streak = fbm2(u * 16, v * 2, 2, 801, 16) * 0.08;
+    const c = [0.16, 0.26, 0.07].map((cc, k) => cc * (1 + streak) * (1 - node * 0.45) + bloom * [0.3, 0.32, 0.28][k]);
+    const i = (y * N + x) * 4;
+    for (let k = 0; k < 3; k++) col[i + k] = clamp(Math.pow(c[k], 1 / 2.2), 0, 1) * 255;
+    col[i + 3] = 255;
+  }
+  TEX.bamboo = dataTex(col, N, N, { srgb: true });
+}
+function buildBamboo(cards) {
+  makeBambooTexture();
+  const R = mulberry32(91);
+  const cx = -11.6, cz = -6.6, culms = [], nodes = [];
+  for (let k = 0; k < 46; k++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * 3.1;
+    const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d * 0.8;
+    const gy = terrainHeight(x, z);
+    const H = 6 + R() * 3.5, r = 0.032 + R() * 0.02;
+    const lean = new THREE.Vector3(Math.cos(a) * 0.08 + (R() - 0.5) * 0.06, 1, Math.sin(a) * 0.08 + (R() - 0.5) * 0.06).normalize();
+    const pts = [], segs = 16;
+    const p = new THREE.Vector3(x, gy - 0.05, z), dd = lean.clone();
+    pts.push(p.clone());
+    for (let i = 1; i <= segs; i++) { dd.x += lean.x * 0.03 * (i / segs); dd.z += lean.z * 0.03 * (i / segs); dd.normalize(); p.addScaledVector(dd, H / segs); pts.push(p.clone()); }
+    const g = tubeGeom(pts, (t) => lerp(r, r * 0.45, t * t), 8, true);
+    // uv.v in internodes (0.3 m)
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) / 0.3);
+    fillAttr(g, 'aWind', 4, (px, py) => [Math.pow(clamp((py - gy) / H, 0, 1), 1.6) * 1.5, 0, k * 0.37, 0]);
+    culms.push(g);
+    // branches and leaf sprays in the upper half
+    for (let i = Math.floor(segs * 0.45); i < segs; i++) {
+      const t = i / segs;
+      if (R() < 0.35) continue;
+      const bp = pts[i];
+      const ang = R() * Math.PI * 2;
+      const bd = new THREE.Vector3(Math.cos(ang), 0.35, Math.sin(ang)).normalize();
+      const blen = 0.5 + R() * 0.6;
+      const bpts = growPath(R, bp, bd, blen, 3, 0.3, -0.2);
+      const bg = tubeGeom(bpts, (tt) => lerp(0.008, 0.003, tt), 4, true);
+      fillAttr(bg, 'aWind', 4, () => [Math.pow(t, 1.6) * 1.5 + 0.2, 0, k * 0.37, 0]);
+      const bu = bg.attributes.uv; for (let q = 0; q < bu.count; q++) bu.setY(q, bu.getY(q) / 0.3);
+      nodes.push(bg);
+      for (let q = 0; q < 3; q++) {
+        const lp = bpts[bpts.length - 1 - Math.floor(R() * 2)].clone().add(randUnit(R).multiplyScalar(0.12));
+        const cn = new THREE.Vector3(lp.x - cx, 0.8, lp.z - cz).normalize();
+        cards.add(lp, new THREE.Vector3(Math.cos(R() * 7), 0.1, Math.sin(R() * 7)).normalize(), new THREE.Vector3(0, 1, 0), 0.45 + R() * 0.2, cn, CELL.BAMBOO, CELL.BAMBOO, Math.pow(t, 1.6) * 1.5 + 0.35, 1.2);
+      }
+    }
+    OBSTACLES.push({ x, z, r: r + 0.05, top: 9, bottom: -2 });
+  }
+  const bt = TEX.bamboo;
+  const mat = patchMaterial(new THREE.MeshStandardMaterial({ map: bt, roughness: 0.45, metalness: 0, envMapIntensity: 0.9 }), { wind: true, porosity: 0.2, key: 'bamboo' });
+  const m = new THREE.Mesh(mergeGeoms(culms.concat(nodes).map((g) => keepAttrs(g, ['position', 'normal', 'uv', 'aWind']))), mat);
+  patchDepth(m, { wind: true, key: 'bamboo' });
+  m.castShadow = true; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
+  scene.add(m);
+}
+// ---------- clipped hedges and mounds (karikomi) ----------
+function buildHedges(cards) {
+  const mounds = [
+    [-5.3, 5.3, 1.0, 0.62, 0.9], [-6.35, 4.35, 0.8, 0.5, 0.75], [-4.35, 5.95, 0.65, 0.42, 0.6], [10.3, 1.5, 0.9, 0.6, 0.8], [10.85, 0.45, 0.7, 0.48, 0.65],
+    [-8.1, -1.3, 0.9, 0.55, 0.8], [4.4, 5.5, 0.8, 0.5, 0.7], [-2.9, 6.85, 0.7, 0.45, 0.65], [-0.95, 7.05, 0.6, 0.4, 0.55], [9.9, -2.9, 0.8, 0.55, 0.7],
+    [2.8, -6.3, 0.75, 0.5, 0.7], [-2.6, -6.7, 0.9, 0.6, 0.8], [6.2, -4.6, 0.7, 0.45, 0.65],
+  ];
+  const R = mulberry32(61);
+  const geoms = [];
+  for (const [x, z, rx, ry, rz] of mounds) {
+    const g = new THREE.SphereGeometry(1, 40, 22);
+    const p = g.attributes.position;
+    const gy = terrainHeight(x, z);
+    for (let i = 0; i < p.count; i++) {
+      let vx = p.getX(i), vy = p.getY(i), vz = p.getZ(i);
+      const n = fbm3(vx * 2.2 + x, vy * 2.2, vz * 2.2 + z, 3) * 0.08 + fbm3(vx * 6 + x, vy * 6, vz * 6, 2) * 0.03;
+      vx *= rx * (1 + n); vz *= rz * (1 + n); vy = Math.max(vy, -0.2) * ry * (1 + n);
+      p.setXYZ(i, x + vx, gy + vy + ry * 0.15, z + vz);
+    }
+    g.computeVertexNormals();
+    geoms.push(keepAttrs(g, ['position', 'normal']));
+    // a fuzz of leaf cards breaks the clipped silhouette
+    const nC = Math.round(rx * rz * 260);
+    for (let k = 0; k < nC; k++) {
+      const d = randUnit(R); d.y = Math.abs(d.y) * 0.9 + 0.1; d.normalize();
+      const pos = new THREE.Vector3(x + d.x * rx * 1.02, gy + ry * 0.15 + d.y * ry * 1.02, z + d.z * rz * 1.02);
+      const nrm = new THREE.Vector3(d.x / rx, d.y / ry, d.z / rz).normalize();
+      cards.add(pos, nrm.clone().lerp(randUnit(R), 0.4).normalize(), randUnit(R), 0.12 + R() * 0.06, nrm, R() < 0.35 ? CELL.AZALEA : CELL.HEDGE, CELL.HEDGE, 0.05, 0.4);
+    }
+    OBSTACLES.push({ x, z, r: Math.max(rx, rz), top: gy + ry, bottom: gy - 1 });
+  }
+  const mat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, metalness: 0, envMapIntensity: 0.6 }), { hedge: true, leaf: true, porosity: 0.5, key: 'hedge' });
+  const m = new THREE.Mesh(mergeGeoms(geoms), mat);
+  m.castShadow = true; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
+  scene.add(m);
+}
+// ---------- water plants and flower beds ----------
+// small plant atlas (2x2 of 512): lotus leaf, lily pad, lotus petal, iris petal
+function makePlantAtlas() {
+  const S = 512, cv = document.createElement('canvas');
+  cv.width = cv.height = S * 2;
+  const ctx = cv.getContext('2d');
+  const R = mulberry32(555);
+  const rnd = (a, b) => a + (b - a) * R();
+  const cellAt = (i, fn) => { ctx.save(); ctx.translate((i % 2) * S, Math.floor(i / 2) * S); fn(); ctx.restore(); };
+  // lotus leaf: round, radial veins, blue-green waxy
+  cellAt(0, () => {
+    const g = ctx.createRadialGradient(256, 256, 10, 256, 256, 250);
+    g.addColorStop(0, '#9aa86a'); g.addColorStop(0.15, '#5f8a3e'); g.addColorStop(1, '#3f6e33');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(256, 256, 250, 0, 7); ctx.fill();
+    for (let k = 0; k < 22; k++) {
+      const a = (k / 22) * Math.PI * 2;
+      ctx.strokeStyle = 'rgba(200,220,150,0.35)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(256, 256);
+      ctx.quadraticCurveTo(256 + Math.cos(a + 0.05) * 130, 256 + Math.sin(a + 0.05) * 130, 256 + Math.cos(a) * 246, 256 + Math.sin(a) * 246); ctx.stroke();
+    }
+    for (let k = 0; k < 900; k++) { ctx.fillStyle = `rgba(${rnd(40, 90)},${rnd(90, 130)},${rnd(50, 80)},0.12)`; ctx.beginPath(); ctx.arc(rnd(20, 492), rnd(20, 492), rnd(3, 10), 0, 7); ctx.fill(); }
+    ctx.globalCompositeOperation = 'destination-in'; ctx.beginPath(); ctx.arc(256, 256, 248, 0, 7); ctx.fill();
+  });
+  // water lily pad: notch slit, glossy green with reddish margin
+  cellAt(1, () => {
+    const g = ctx.createRadialGradient(256, 256, 10, 256, 256, 250);
+    g.addColorStop(0, '#4f7a2a'); g.addColorStop(0.85, '#3b6a26'); g.addColorStop(1, '#6a3b2a');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(256, 256, 248, 0, 7); ctx.fill();
+    for (let k = 0; k < 16; k++) { const a = (k / 16) * Math.PI * 2; ctx.strokeStyle = 'rgba(160,200,110,0.25)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(256, 256); ctx.lineTo(256 + Math.cos(a) * 240, 256 + Math.sin(a) * 240); ctx.stroke(); }
+    for (let k = 0; k < 600; k++) { ctx.fillStyle = `rgba(${rnd(30, 70)},${rnd(70, 110)},${rnd(30, 50)},0.15)`; ctx.beginPath(); ctx.arc(rnd(20, 492), rnd(20, 492), rnd(4, 12), 0, 7); ctx.fill(); }
+  });
+  // lotus petal: white base flushing to pink tip, fine veins
+  cellAt(2, () => {
+    const g = ctx.createLinearGradient(0, 512, 0, 0);
+    g.addColorStop(0, '#f6efe6'); g.addColorStop(0.55, '#f7dbe2'); g.addColorStop(1, '#e0708f');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+    for (let k = 0; k < 26; k++) { const x = 20 + k * 18.5; ctx.strokeStyle = 'rgba(200,110,140,0.22)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(256 + (x - 256) * 0.3, 512); ctx.quadraticCurveTo(x, 260, 256 + (x - 256) * 0.55, 0); ctx.stroke(); }
+  });
+  // iris fall: purple with white veins and a yellow signal
+  cellAt(3, () => {
+    const g = ctx.createLinearGradient(0, 512, 0, 0);
+    g.addColorStop(0, '#3a1f6e'); g.addColorStop(0.5, '#5b35a8'); g.addColorStop(1, '#6d49c0');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 512, 512);
+    for (let k = 0; k < 30; k++) { const x = k * 17.6; ctx.strokeStyle = 'rgba(235,225,255,0.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(256, 512); ctx.quadraticCurveTo(x, 300, x, 0); ctx.stroke(); }
+    const sg = ctx.createRadialGradient(256, 400, 5, 256, 400, 110); sg.addColorStop(0, '#ffd83a'); sg.addColorStop(1, 'rgba(255,216,58,0)');
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.ellipse(256, 400, 45, 120, 0, 0, 7); ctx.fill();
+  });
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = MAX_ANISO;
+  TEX.plants = tex;
+}
+const PADS = [];        // lily pads: {ax, az, x, z, yaw, r, vx, vz}
+let padMesh, lilyFlowerMesh, lotusFloatMesh;
+function plantMaterial(opts = {}) {
+  const m = new THREE.MeshStandardMaterial(Object.assign({ map: TEX.plants, roughness: 0.45, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.8 }, opts.mat || {}));
+  return patchMaterial(m, Object.assign({ leaf: true, porosity: 0.2, key: opts.key || 'plant' }, opts.patch || {}));
+}
+// disc (optionally with a notch) mapped to a plant-atlas cell; cup lifts the rim or centre
+function discGeom(cell, notch = 0, cup = 0, segs = 28, rings = 5) {
+  const pos = [], uv = [], idx = [];
+  const cx = (cell % 2) * 0.5, cy = (1 - Math.floor(cell / 2)) * 0.5;
+  pos.push(0, cup < 0 ? cup : 0, 0); uv.push(cx + 0.25, cy + 0.25);
+  const a0 = notch, a1 = Math.PI * 2 - notch;
+  for (let r = 1; r <= rings; r++) {
+    const rr2 = r / rings;
+    for (let j = 0; j <= segs; j++) {
+      const a = lerp(a0, a1, j / segs);
+      const y = cup > 0 ? cup * rr2 * rr2 : cup < 0 ? cup * (1 - rr2 * rr2) : 0;
+      pos.push(Math.cos(a) * rr2, y + 0.012 * Math.sin(a * 5 + r) * rr2, Math.sin(a) * rr2);
+      uv.push(cx + 0.25 + Math.cos(a) * rr2 * 0.245, cy + 0.25 + Math.sin(a) * rr2 * 0.245);
+    }
+  }
+  for (let j = 0; j < segs; j++) idx.push(0, 1 + j + 1, 1 + j);
+  for (let r = 1; r < rings; r++) for (let j = 0; j < segs; j++) {
+    const a = 1 + (r - 1) * (segs + 1) + j, b = a + segs + 1;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+// a curved petal strip: length L, width W, cupping and recurve; uv to a plant-atlas cell
+function petalGeom(L, W, cup, curl, cell, segL = 6, segW = 4) {
+  const pos = [], uv = [], idx = [];
+  const cx = (cell % 2) * 0.5, cy = (1 - Math.floor(cell / 2)) * 0.5;
+  for (let i = 0; i <= segL; i++) for (let j = 0; j <= segW; j++) {
+    const t = i / segL, s = j / segW - 0.5;
+    const w = W * Math.sin(Math.pow(t, 0.6) * Math.PI * 0.92 + 0.12) * (1 - 0.15 * t);
+    const x = s * w, bend = curl * t * t;
+    pos.push(x, t * L * Math.cos(bend), cup * s * s * W * 2 + t * L * Math.sin(bend));
+    uv.push(cx + (s + 0.5) * 0.5, cy + t * 0.5);
+  }
+  for (let i = 0; i < segL; i++) for (let j = 0; j < segW; j++) {
+    const a = i * (segW + 1) + j, b = a + segW + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return g;
+}
+function stemTube(pts, r0, r1) { return keepAttrs(tubeGeom(pts, (t) => lerp(r0, r1, t), 5), ['position', 'normal', 'uv']); }
+// points along the outline, pushed outward (+) or inward (-) by off metres
+function shorePoint(frac, off) {
+  const n = POND_PTS.length, i = Math.floor(((frac % 1) + 1) % 1 * n);
+  const p = POND_PTS[i], g = pondSDFGrad(p[0], p[1], new THREE.Vector2());
+  return [p[0] + g.x * off, p[1] + g.y * off];
+}
+function buildWaterPlants() {
+  makePlantAtlas();
+  const R = mulberry32(333);
+  // ---- water lilies: floating pads (FLOAT, SURFACE layer) ----
+  const clusters = [[-4.3, -2.4, 0.9, 22], [-2.2, 2.6, 0.7, 14], [0.4, -3.3, 0.6, 10], [5.3, -2.2, 0.55, 9], [-4.9, 0.6, 0.5, 8]];
+  for (const [cx, cz, rad, n] of clusters) for (let k = 0; k < n; k++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * rad;
+    const x = cx + Math.cos(a) * d, z = cz + Math.sin(a) * d;
+    if (pondSDF(x, z) > -0.25) continue;
+    const r = 0.1 + R() * 0.09;
+    if (PADS.some((p) => Math.hypot(p.ax - x, p.az - z) < (p.r + r) * 0.9)) continue;
+    PADS.push({ ax: x, az: z, x, z, yaw: R() * Math.PI * 2, r, vx: 0, vz: 0, flower: R() < 0.22 ? Math.floor(R() * 3) : -1 });
+  }
+  const padG = discGeom(1, 0.1, 0, 30, 4);
+  const floatMat = plantMaterial({ key: 'pad', mat: { roughness: 0.32 }, patch: { float: true } });
+  padMesh = new THREE.InstancedMesh(padG, floatMat, PADS.length);
+  padMesh.layers.set(LAYER.SURFACE); padMesh.receiveShadow = true; padMesh.castShadow = false; padMesh.frustumCulled = false;
+  scene.add(padMesh);
+  // floating lily flowers: layered pointed petals around golden stamens
+  const lf = [];
+  for (let w = 0; w < 3; w++) {
+    const n = 9 + w * 2;
+    for (let k = 0; k < n; k++) {
+      const pg = petalGeom(0.55 - w * 0.12, 0.22, 0.25, -0.35 - w * 0.45, 2);
+      pg.rotateX(-Math.PI / 2 + 0.25 + w * 0.42);
+      pg.rotateY((k / n) * Math.PI * 2 + w * 0.3);
+      pg.translate(0, 0.02 + w * 0.02, 0);
+      lf.push(pg);
+    }
+  }
+  const st = discGeom(0, 0, -0.08, 16, 2); st.scale(0.12, 1, 0.12); st.translate(0, 0.11, 0);
+  lf.push(st);
+  const lfg = mergeGeoms(lf.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+  lilyFlowerMesh = new THREE.InstancedMesh(lfg, plantMaterial({ key: 'lily', mat: { roughness: 0.55 }, patch: { float: true } }), Math.max(1, PADS.filter((p) => p.flower >= 0).length));
+  const lilyCols = [new THREE.Color(1, 0.97, 0.94), new THREE.Color(1, 0.72, 0.82), new THREE.Color(1, 0.9, 0.45)];
+  let fi = 0;
+  for (const p of PADS) if (p.flower >= 0) { lilyFlowerMesh.setColorAt(fi++, lilyCols[p.flower]); }
+  lilyFlowerMesh.layers.set(LAYER.SURFACE); lilyFlowerMesh.frustumCulled = false; lilyFlowerMesh.receiveShadow = true;
+  scene.add(lilyFlowerMesh);
+  updatePads(0, true);
+  // ---- sacred lotus in the east pool ----
+  const LOT = { x: 4.95, z: 0.55, r: 0.95 };
+  OBSTACLES.push({ x: LOT.x, z: LOT.z, r: LOT.r * 0.8, top: 0.5, bottom: -2 });
+  const leafG = discGeom(0, 0, 0.16, 32, 5);
+  const raised = [], stems = [], floating = [];
+  for (let k = 0; k < 16; k++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * LOT.r;
+    const x = LOT.x + Math.cos(a) * d, z = LOT.z + Math.sin(a) * d;
+    if (pondSDF(x, z) > -0.2) continue;
+    const s = 0.2 + R() * 0.12;
+    const fl = floorHeight(x, z);
+    if (k < 5) { floating.push([x, z, s * 0.9, R() * 6]); continue; }
+    const h = 0.25 + R() * 0.65;
+    const top = new THREE.Vector3(x + (R() - 0.5) * 0.15, WATER_Y + h, z + (R() - 0.5) * 0.15);
+    const g = leafG.clone();
+    g.scale(s, s, s);
+    g.rotateX((R() - 0.5) * 0.5); g.rotateZ((R() - 0.5) * 0.5); g.rotateY(R() * 6);
+    g.translate(top.x, top.y, top.z);
+    raised.push(g);
+    const mid = new THREE.Vector3(lerp(x, top.x, 0.5) + (R() - 0.5) * 0.1, lerp(fl, top.y, 0.5), lerp(z, top.z, 0.5) + (R() - 0.5) * 0.1);
+    stems.push(stemTube([new THREE.Vector3(x, fl - 0.05, z), mid, top.clone().add(new THREE.Vector3(0, -0.01, 0))], 0.0055, 0.0045));
+  }
+  // flowers and buds on tall stalks
+  const flowerParts = [];
+  for (let k = 0; k < 6; k++) {
+    const a = R() * Math.PI * 2, d = Math.sqrt(R()) * LOT.r * 0.8;
+    const x = LOT.x + Math.cos(a) * d, z = LOT.z + Math.sin(a) * d;
+    if (pondSDF(x, z) > -0.2) continue;
+    const h = 0.8 + R() * 0.45, fl = floorHeight(x, z);
+    const top = new THREE.Vector3(x + (R() - 0.5) * 0.12, WATER_Y + h, z + (R() - 0.5) * 0.12);
+    stems.push(stemTube([new THREE.Vector3(x, fl - 0.05, z), new THREE.Vector3(x + (R() - 0.5) * 0.08, (fl + top.y) * 0.5, z + (R() - 0.5) * 0.08), new THREE.Vector3(lerp(x, top.x, 0.9), top.y - 0.12, lerp(z, top.z, 0.9)), top], 0.005, 0.0045));
+    const bud = k >= 4, sc = bud ? 0.75 : 1;
+    const nP = bud ? 8 : 16;
+    for (let q = 0; q < nP; q++) {
+      const w = q < nP / 2 ? 0 : 1;
+      const pg = petalGeom(0.16 * sc, bud ? 0.07 : 0.1, 0.6, bud ? 0.15 : 0.55 + w * 0.3, 2);
+      pg.rotateX(bud ? -0.15 : -0.38 - w * 0.3);
+      pg.rotateY((q / (nP / 2)) * Math.PI * 2 + w * 0.4);
+      pg.translate(top.x, top.y, top.z);
+      flowerParts.push(pg);
+    }
+    if (!bud) {
+      const pod = latheGeom([[0.0, 0.0], [0.02, 0.0], [0.045, 0.05], [0.05, 0.065], [0.0, 0.066]], 14);
+      pod.translate(top.x, top.y + 0.02, top.z);
+      flowerParts.push(keepAttrs(pod, ['position', 'normal', 'uv']));
+    }
+  }
+  const lotusMat = plantMaterial({ key: 'lotus', mat: { roughness: 0.75 } });
+  const addM = (list, mat, layer) => { if (!list.length) return; const m = new THREE.Mesh(mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv']))), mat); m.castShadow = true; m.receiveShadow = true; m.layers.set(layer); scene.add(m); return m; };
+  addM(raised, lotusMat, LAYER.ABOVE);
+  addM(flowerParts, plantMaterial({ key: 'lotusFlower', mat: { roughness: 0.6 } }), LAYER.ABOVE);
+  const stemMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x5f7a38, roughness: 0.6 }), { key: 'stem', porosity: 0.1 });
+  addM(stems, stemMat, LAYER.BOTH);
+  // floating lotus leaves ride the waves
+  lotusFloatMesh = new THREE.InstancedMesh(discGeom(0, 0, 0.03, 28, 4), plantMaterial({ key: 'lotusFloat', mat: { roughness: 0.7 }, patch: { float: true } }), floating.length);
+  floating.forEach(([x, z, s, yaw], i) => lotusFloatMesh.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(x, WATER_Y + 0.004, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(s, s, s))));
+  lotusFloatMesh.layers.set(LAYER.SURFACE); lotusFloatMesh.frustumCulled = false; lotusFloatMesh.receiveShadow = true;
+  scene.add(lotusFloatMesh);
+  // lily stems under the pads
+  const lilyStems = [];
+  for (const p of PADS) { const fl = floorHeight(p.ax, p.az); lilyStems.push(stemTube([new THREE.Vector3(p.ax, fl - 0.03, p.az), new THREE.Vector3(p.ax + 0.05, (fl - 0.02) * 0.5, p.az + 0.03), new THREE.Vector3(p.ax, WATER_Y - 0.02, p.az)], 0.005, 0.004)); }
+  const ls = new THREE.Mesh(mergeGeoms(lilyStems), stemMat); ls.layers.set(LAYER.UNDER); ls.receiveShadow = true; scene.add(ls);
+  // ---- iris clumps at the water's edge ----
+  const irisBlades = [], irisFlowers = [];
+  const irisSpots = [0.52, 0.56, 0.62, 0.8, 0.4, 0.02, 0.17, 0.9].map((f) => shorePoint(f, 0.12));
+  for (const [x, z] of irisSpots) {
+    const gy = terrainHeight(x, z);
+    for (let k = 0; k < 20; k++) {
+      const a = R() * Math.PI * 2, bx = x + Math.cos(a) * 0.12 * R(), bz = z + Math.sin(a) * 0.12 * R();
+      const L = 0.55 + R() * 0.35, lean = 0.15 + R() * 0.35;
+      const pts = [];
+      for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push(new THREE.Vector3(bx + Math.cos(a) * lean * t * t * L, gy - 0.02 + t * L, bz + Math.sin(a) * lean * t * t * L)); }
+      // flat sword blade: a thin ribbon
+      const pos = [], idx = [];
+      const w0 = 0.022, side = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
+      pts.forEach((p, i) => { const w = w0 * (1 - Math.pow(i / 5, 2) * 0.9); pos.push(p.x - side.x * w, p.y, p.z - side.z * w, p.x + side.x * w, p.y, p.z + side.z * w); });
+      for (let i = 0; i < 5; i++) { const q = i * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+      fillAttr(g, 'aWind', 4, (px, py) => [clamp((py - gy) / L, 0, 1) * 0.35, 0.2, a, 0]);
+      irisBlades.push(g);
+    }
+    for (let f = 0; f < 3; f++) {
+      const fx = x + (R() - 0.5) * 0.2, fz = z + (R() - 0.5) * 0.2, fy = gy + 0.75 + R() * 0.2;
+      irisBlades.push(fillAttr(keepAttrs(tubeGeom([new THREE.Vector3(fx, gy, fz), new THREE.Vector3(fx, fy, fz)], () => 0.005, 4), ['position', 'normal']), 'aWind', 4, (px, py) => [clamp((py - gy) / 0.9, 0, 1) * 0.3, 0, f, 0]));
+      const yaw = R() * 6;
+      for (let q = 0; q < 3; q++) {
+        const fall = petalGeom(0.085, 0.06, 0.3, 1.9, 3); fall.rotateX(-0.9); fall.rotateY((q / 3) * Math.PI * 2 + yaw); fall.translate(fx, fy, fz);
+        const std = petalGeom(0.06, 0.035, 0.4, -0.3, 3); std.rotateX(-0.15); std.rotateY((q / 3) * Math.PI * 2 + yaw + Math.PI / 3); std.translate(fx, fy + 0.01, fz);
+        irisFlowers.push(fall, std);
+      }
+    }
+  }
+  const bladeMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x3f6a2a, roughness: 0.6, side: THREE.DoubleSide }), { wind: true, leaf: true, key: 'irisBlade', porosity: 0.3 });
+  const bm = new THREE.Mesh(mergeGeoms(irisBlades.map((g) => keepAttrs(g, ['position', 'normal', 'aWind']))), bladeMat);
+  patchDepth(bm, { wind: true, key: 'irisBlade' });
+  bm.castShadow = true; bm.receiveShadow = true; bm.layers.set(LAYER.ABOVE); scene.add(bm);
+  addM(irisFlowers, plantMaterial({ key: 'irisFlower', mat: { roughness: 0.55 } }), LAYER.ABOVE);
+}
+// pads drift on their tethers and can be pushed aside (by the hand)
+const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pv = new THREE.Vector3(), _ps = new THREE.Vector3(), _py = new THREE.Vector3(0, 1, 0);
+function updatePads(dt, force = false) {
+  const wx = G.uWindDir.value.x * G.uWind.value * 0.012, wz = G.uWindDir.value.y * G.uWind.value * 0.012;
+  let fi = 0;
+  PADS.forEach((p, i) => {
+    if (dt > 0) {
+      p.vx += ((p.ax - p.x) * 0.8 + wx) * dt; p.vz += ((p.az - p.z) * 0.8 + wz) * dt;
+      p.vx *= Math.exp(-1.5 * dt); p.vz *= Math.exp(-1.5 * dt);
+      p.x += p.vx * dt; p.z += p.vz * dt;
+      p.yaw += (p.vx * 0.3 - p.vz * 0.2) * dt;
+    }
+    _pq.setFromAxisAngle(_py, p.yaw);
+    _pm.compose(_pv.set(p.x, WATER_Y + 0.004, p.z), _pq, _ps.set(p.r, p.r, p.r));
+    padMesh.setMatrixAt(i, _pm);
+    if (p.flower >= 0) {
+      _pm.compose(_pv.set(p.x + Math.cos(p.yaw) * p.r * 0.2, WATER_Y + 0.012, p.z + Math.sin(p.yaw) * p.r * 0.2), _pq, _ps.setScalar(0.12));
+      lilyFlowerMesh.setMatrixAt(fi++, _pm);
+    }
+  });
+  padMesh.instanceMatrix.needsUpdate = true;
+  lilyFlowerMesh.instanceMatrix.needsUpdate = true;
+}
+// ---------- beds: spider lilies, hydrangea, ferns, grass ----------
+function buildBeds(ever, decid) {
+  const R = mulberry32(444);
+  // spider lily (higanbana): bare stalks with red umbels of recurved petals and long stamens
+  const slParts = [];
+  const beds = [[5.2, 4.2], [3.4, 5.3], [-2.65, 5.35], [6.9, 5.35], [-8.8, 0.3], [9.4, 2.4]];
+  for (const [bx, bz] of beds) for (let k = 0; k < 8; k++) {
+    const x = bx + (R() - 0.5) * 0.5, z = bz + (R() - 0.5) * 0.5, gy = terrainHeight(x, z), h = 0.35 + R() * 0.15;
+    const top = new THREE.Vector3(x, gy + h, z);
+    slParts.push(fillAttr(keepAttrs(tubeGeom([new THREE.Vector3(x, gy - 0.02, z), top], () => 0.004, 4), ['position', 'normal']), 'aCol', 3, () => [0.25, 0.4, 0.15]));
+    for (let f = 0; f < 6; f++) {
+      const a = (f / 6) * Math.PI * 2 + R();
+      for (let q = 0; q < 6; q++) {
+        const pts = [], pa = a + (q / 6) * 0.9 - 0.45;
+        for (let i = 0; i <= 5; i++) { const t = i / 5; pts.push(new THREE.Vector3(top.x + Math.cos(pa) * t * 0.05, top.y + Math.sin(t * Math.PI) * 0.02 - t * t * 0.02, top.z + Math.sin(pa) * t * 0.05)); }
+        slParts.push(fillAttr(keepAttrs(tubeGeom(pts, (t) => 0.0035 * (1 - t * 0.6), 3), ['position', 'normal']), 'aCol', 3, () => [0.62, 0.02, 0.02]));
+      }
+      const sp = [];
+      for (let i = 0; i <= 5; i++) { const t = i / 5; sp.push(new THREE.Vector3(top.x + Math.cos(a) * t * 0.085, top.y + Math.sin(t * 2.6) * 0.045, top.z + Math.sin(a) * t * 0.085)); }
+      slParts.push(fillAttr(keepAttrs(tubeGeom(sp, () => 0.0008, 3), ['position', 'normal']), 'aCol', 3, () => [0.7, 0.05, 0.05]));
+    }
+  }
+  const slMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }), { key: 'spiderlily', porosity: 0.2, attrCol: true });
+  const slg = mergeGeoms(slParts); slg.setAttribute('color', slg.attributes.aCol); slg.deleteAttribute('aCol');
+  const sl = new THREE.Mesh(slg, slMat); sl.castShadow = true; sl.receiveShadow = true; sl.layers.set(LAYER.ABOVE); scene.add(sl);
+  // hydrangea shrubs: leafy volume with blue-violet mopheads
+  for (const [x, z, s] of [[3.55, 3.55, 0.55], [10.3, -0.9, 0.6], [-8.5, 2.7, 0.55], [-0.2, -5.95, 0.45]]) {
+    const gy = terrainHeight(x, z), c = new THREE.Vector3(x, gy + s * 0.75, z);
+    fillCanopy(ever, R, c, s * 1.1, s * 0.75, s * 1.1, 160, 0.26, CELL.BROAD, CELL.BROAD, 0.12, { flatBottom: true, up: 0.4 });
+    for (let k = 0; k < 9; k++) {
+      const d = randUnit(R); d.y = Math.abs(d.y) * 0.8 + 0.2; d.normalize();
+      const p = new THREE.Vector3(c.x + d.x * s, c.y + d.y * s * 0.7, c.z + d.z * s);
+      for (let q = 0; q < 3; q++) { const f = randUnit(R); ever.add(p, f, randUnit(R), 0.24, d, CELL.HYDRANGEA, CELL.HYDRANGEA, 0.15, 0.2, 0.9); }
+    }
+    OBSTACLES.push({ x, z, r: s, top: gy + s, bottom: gy - 1 });
+  }
+  // fern rosettes in the shade by rocks and the falls
+  for (const [x, z] of [[-1.85, -5.7], [1.25, -5.85], [-6.5, -4.6], [-9.6, -4.8], [-7.05, 1.65], [7.05, -2.25], [-2.3, -6.2], [0.9, -6.6]]) {
+    const gy = terrainHeight(x, z);
+    for (let k = 0; k < 11; k++) {
+      const a = (k / 11) * Math.PI * 2 + R() * 0.4;
+      const out = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      const p = new THREE.Vector3(x + out.x * 0.22, gy + 0.2, z + out.z * 0.22);
+      const facing = new THREE.Vector3(-out.z, 0.35, out.x).normalize();
+      const up = out.clone().setY(1.1).normalize();
+      ever.add(p, facing, up, 0.5 + R() * 0.2, new THREE.Vector3(out.x * 0.5, 1, out.z * 0.5).normalize(), CELL.FERN, CELL.FERN, 0.2, 0.5, 0.7);
+    }
+  }
+  // grass tufts over the lawn, kept off the water, paths and hardscape
+  let placed = 0;
+  const anchors = ROCKS.filter((r) => r.top > 0.05 && r.bottom > -0.3).map((r) => [r.x, r.z, r.r + 0.35])
+    .concat(OBSTACLES.filter((o) => o.top > 0.3 && o.r > 0.2).map((o) => [o.x, o.z, o.r + 0.4]));
+  for (let k = 0; k < 400; k++) { const q = shorePoint(k / 400, 0.4 + R() * 0.5); anchors.push([q[0], q[1], 0.3]); }
+  for (let k = 0; k < 12000 && placed < 2600; k++) {
+    const an = anchors[Math.floor(R() * anchors.length)];
+    const a = R() * Math.PI * 2, d = an[2] * (0.8 + R() * 0.9);
+    const x = an[0] + Math.cos(a) * d, z = an[1] + Math.sin(a) * d;
+    const sd = pondSDF(x, z);
+    if (sd < 0.3) continue;
+    if (ROCKS.some((r) => Math.hypot(r.x - x, r.z - z) < r.r + 0.1)) continue;
+    if (Math.hypot(x - PAVILION.x, z - PAVILION.z) < 2.2) continue;
+    const gy = terrainHeight(x, z);
+    const f = new THREE.Vector3(Math.cos(R() * 7), 0, Math.sin(R() * 7));
+    const s = (0.22 + R() * 0.2) * (0.6 + 0.4 * smoothstep(0.45, 2, sd));
+    ever.add(new THREE.Vector3(x, gy + s * 0.45, z), f, new THREE.Vector3(0, 1, 0), s, new THREE.Vector3(0, 1, 0), CELL.GRASS, CELL.GRASS, 0.2 * s, 0.5, 0.4 + R() * 0.6);
+    placed++;
+  }
+}
+// ---------- falling petals (and autumn leaves) that land and float ----------
+const FALL = { air: [], floating: [], airMesh: null, floatMesh: null, max: 360, maxFloat: 420, acc: 0 };
+function buildFalling() {
+  const g = new THREE.PlaneGeometry(1, 1);
+  const uvA = g.attributes.uv;
+  const cellUV = (cell) => [(cell % 4) * 0.25, (3 - Math.floor(cell / 4)) * 0.25];
+  const [ox, oy] = cellUV(CELL.PETAL);
+  for (let i = 0; i < uvA.count; i++) uvA.setXY(i, ox + uvA.getX(i) * 0.25, oy + uvA.getY(i) * 0.25);
+  const mk = (float, count, layer) => {
+    const m = new THREE.MeshStandardMaterial({ map: TEX.foliage, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.6, color: 0xffffff });
+    const mat = patchMaterial(m, { leaf: true, float, key: float ? 'petalFloat' : 'petalAir', porosity: 0.1 });
+    const mesh = new THREE.InstancedMesh(g, mat, count);
+    mesh.count = 0; mesh.frustumCulled = false; mesh.layers.set(layer);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  };
+  FALL.airMesh = mk(false, FALL.max, LAYER.ABOVE);
+  FALL.floatMesh = mk(true, FALL.maxFloat, LAYER.SURFACE);
+}
+const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3();
+function updateFalling(dt) {
+  if (!FALL.airMesh || dt <= 0) return;
+  const bloom = (1 - env.autumn) * (1 - env.snow) * (1 - env.rain * 0.5);
+  const wx = G.uWindDir.value.x, wz = G.uWindDir.value.y, wind = G.uWind.value + G.uGust.value * 0.6;
+  FALL.acc += dt * (6 + 14 * wind) * bloom;
+  while (FALL.acc > 1 && FALL.air.length < FALL.max) {
+    FALL.acc -= 1;
+    const src = VEG.petalSources[Math.floor(Math.random() * VEG.petalSources.length)];
+    if (!src) break;
+    FALL.air.push({ x: src.x + (Math.random() - 0.5) * 2.5, y: src.y + (Math.random() - 0.3) * 1.2, z: src.z + (Math.random() - 0.5) * 2.5, rx: Math.random() * 6, ry: Math.random() * 6, rz: Math.random() * 6, sp: 0.35 + Math.random() * 0.35, ph: Math.random() * 6, s: 0.012 + Math.random() * 0.006 });
+  }
+  if (FALL.acc > 1) FALL.acc = 1;
+  let n = 0;
+  for (let i = FALL.air.length - 1; i >= 0; i--) {
+    const p = FALL.air[i];
+    p.ph += dt * 3.2;
+    p.x += (wx * wind * 0.9 + Math.sin(p.ph) * 0.25) * dt;
+    p.z += (wz * wind * 0.9 + Math.cos(p.ph * 0.8) * 0.25) * dt;
+    p.y -= p.sp * (0.7 + 0.3 * Math.sin(p.ph * 1.3)) * dt;
+    p.rx += dt * 2.1; p.ry += dt * 1.3; p.rz += dt * 2.7;
+    const sd = pondSDF(p.x, p.z);
+    const surf = sd < 0 ? WATER_Y + waveHeight(p.x, p.z) : terrainHeight(p.x, p.z);
+    if (p.y <= surf) {
+      FALL.air.splice(i, 1);
+      if (sd < -0.05 && env.ice < 0.5) {
+        if (FALL.floating.length >= FALL.maxFloat) FALL.floating.shift();
+        FALL.floating.push({ x: p.x, z: p.z, yaw: Math.random() * 6, s: p.s, age: 0, life: 50 + Math.random() * 60 });
+        if (Math.random() < 0.3) addDrop(p.x, p.z, 0.02, -0.0006);
+      }
+      continue;
+    }
+    _fe.set(p.rx, p.ry, p.rz); _fq.setFromEuler(_fe);
+    _fm.compose(_fv.set(p.x, p.y, p.z), _fq, _fs.setScalar(p.s * 2.2));
+    FALL.airMesh.setMatrixAt(n++, _fm);
+  }
+  FALL.airMesh.count = n; FALL.airMesh.instanceMatrix.needsUpdate = true;
+  let m = 0;
+  for (let i = FALL.floating.length - 1; i >= 0; i--) {
+    const f = FALL.floating[i];
+    f.age += dt;
+    f.x += wx * wind * 0.035 * dt; f.z += wz * wind * 0.035 * dt;
+    const sd = pondSDF(f.x, f.z);
+    if (sd > -0.03) { const g2 = pondSDFGrad(f.x, f.z, new THREE.Vector2()); f.x -= g2.x * 0.01; f.z -= g2.y * 0.01; }
+    if (f.age > f.life) { FALL.floating.splice(i, 1); continue; }
+    _fq.setFromAxisAngle(_py, f.yaw);
+    _fe.set(-Math.PI / 2, 0, f.yaw); _fq.setFromEuler(_fe);
+    _fm.compose(_fv.set(f.x, WATER_Y + 0.003, f.z), _fq, _fs.setScalar(f.s * 2.2 * (1 - smoothstep(f.life - 6, f.life, f.age) * 0.6)));
+    FALL.floatMesh.setMatrixAt(m++, _fm);
+  }
+  FALL.floatMesh.count = m; FALL.floatMesh.instanceMatrix.needsUpdate = true;
+}
+
+function buildTrees() {
+  makeFoliageAtlas();
+  for (const k of ['cherry', 'pine', 'maple', 'broad']) makeBarkTexture(k);
+  const decid = new CardSet('decid', true), ever = new CardSet('ever', false);
+  buildWeepingCherry(decid);
+  buildCherry(decid);
+  buildMaple(decid, 1.75, -6.25, 71, 1.0);
+  buildMaple(decid, 10.9, -2.2, 72, 0.8);
+  buildPine(ever, -4.9, 5.7, 81, new THREE.Vector3(0.42, 1, -0.3), 3.8);
+  buildPine(ever, 4.0, -8.7, 82, new THREE.Vector3(-0.1, 1, 0.12), 4.4);
+  buildPine(ever, -3.9, -7.6, 83, new THREE.Vector3(0.12, 1, 0.2), 3.4);
+  // background broadleaf ring (keeps the view to the pond open)
+  const R = mulberry32(99);
+  const ring = [[-16, -10], [-19, -2], [-18, 6], [-12, 13], [-5, 16], [5, 17], [13, 13], [18, 6], [20, -3], [17, -11], [10, -15], [2, -16], [-7, -15], [-13, -13],
+    [-24, -8], [-25, 9], [-9, 21], [12, 21], [25, 2], [23, -12], [4, -22], [-15, -20]];
+  ring.forEach(([x, z], i) => buildBroadleaf(decid, x + (R() - 0.5) * 2, z + (R() - 0.5) * 2, 200 + i, 7 + R() * 5));
+  buildBamboo(ever);
+  buildHedges(ever);
+  buildBeds(ever, decid);
+  addBranchesMesh(VEG.cherryTubes, 'cherry', [2, 1.0]);
+  addBranchesMesh(VEG.mapleTubes, 'maple', [2, 1.2]);
+  addBranchesMesh(VEG.pineTubes, 'pine', [2, 0.9]);
+  addBranchesMesh(VEG.broadTubes, 'broad', [2, 0.8]);
+  VEG.decid = decid.build();
+  VEG.ever = ever.build();
+  VEG.cardCount = decid.items.length + ever.items.length;
+}
 
 /* =====================================================================================
    10. WATER (sim, shader, passes)
@@ -3821,6 +4887,8 @@ function step(dt, realDt = dt) {
   updateWaterfall(dt);
   updateWind(clock.t);
   updateKoi(P.freeze ? 0 : dt);
+  updatePads(P.freeze ? 0 : dt);
+  updateFalling(P.freeze ? 0 : dt);
   renderFrame();
   const ms = performance.now() - t0;
   perf.acc += realDt; perf.n++;
@@ -3910,6 +4978,8 @@ async function init() {
     ['Terrain', buildTerrain],
     ['Stones', buildStones],
     ['Bridge & pavilion', () => { buildBridge(); buildPavilion(); buildPier(); buildMountains(); }],
+    ['Trees & bamboo', buildTrees],
+    ['Water plants', () => { buildWaterPlants(); buildFalling(); }],
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['Koi', buildKoi],
