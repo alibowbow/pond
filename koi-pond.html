@@ -46,6 +46,134 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 #toast { position: fixed; left: 50%; top: 18px; transform: translate(-50%, -12px); z-index: 30; padding: 8px 16px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.35s ease, transform 0.35s ease; white-space: nowrap; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 #hud span { color: var(--muted); font-weight: 500; }
+/* ---------- toolbar dock (bottom right) ---------- */
+#dock { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 22; display: flex; align-items: center; gap: 2px; padding: 5px;
+  border-radius: 16px; transition: opacity 0.35s ease, transform 0.35s ease; }
+#dock button { appearance: none; -webkit-appearance: none; border: 0; margin: 0; background: transparent; color: var(--text); height: 38px; min-width: 38px; padding: 0 11px;
+  border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font: 500 12.5px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0.01em; cursor: pointer; position: relative; white-space: nowrap; transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; -webkit-tap-highlight-color: transparent; }
+#dock button:hover { background: rgba(255, 255, 255, 0.09); }
+#dock button:active { transform: translateY(1px); }
+#dock button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
+#dock button.on { color: var(--accent); background: rgba(240, 137, 76, 0.13); }
+#dock svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#dock .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex: none; }
+#dock button.primary { color: #23140a; font-weight: 650; background: linear-gradient(180deg, #f7a36f 0%, var(--accent) 55%, #e0763d 100%);
+  box-shadow: 0 6px 18px rgba(240, 137, 76, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45); margin-left: 3px; }
+#dock button.primary:hover { background: linear-gradient(180deg, #f9b181 0%, #f3955b 55%, #e5804a 100%); }
+#dock button.busy { opacity: 0.55; pointer-events: none; }
+#bSound .x { display: none; }
+#bSound.off .w { display: none; }
+#bSound.off .x { display: inline; }
+#bSound.off { color: var(--muted); }
+#dock [data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border-radius: 8px;
+  background: rgba(14, 17, 20, 0.86); border: 1px solid var(--line); color: var(--text); font: 500 11.5px/1.2 system-ui, sans-serif; pointer-events: none; white-space: nowrap; }
+@media (max-width: 900px) {
+  #dock .lbl { display: none; }
+  #dock button { padding: 0 10px; }
+}
+@media (max-width: 560px) {
+  #dock { right: auto; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); max-width: calc(100vw - 16px); }
+  #dock button { min-width: 36px; padding: 0 8px; height: 38px; }
+  #dock .sep { margin: 0 2px; }
+  #dock [data-tip]:hover::after { display: none; }
+}
+
+/* ---------- guide card (top left, under the HUD) ---------- */
+#guide { position: fixed; left: 14px; top: 54px; z-index: 20; width: 262px; padding: 12px 12px 11px 14px; transition: opacity 0.3s ease, transform 0.3s ease; }
+#guide .gh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#guide .gt { font-family: var(--serif); font-size: 17px; letter-spacing: 0.03em; }
+#guide .gt small { font-size: 12px; color: var(--muted); letter-spacing: 0.25em; margin-left: 6px; }
+#guide button, #gOpen { appearance: none; -webkit-appearance: none; border: 0; background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
+#guide button { width: 24px; height: 24px; font: 400 17px/1 system-ui, sans-serif; }
+#guide button:hover, #gOpen:hover { background: rgba(255, 255, 255, 0.16); }
+#guide ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 3px; }
+#guide li { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: rgba(238, 241, 242, 0.86); min-height: 22px; }
+#guide li .k { display: flex; gap: 3px; flex: none; width: 46px; }
+kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 6px; font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text); background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07)); border: 1px solid rgba(255, 255, 255, 0.18); border-bottom-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
+#guide .gf { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+#guide .gf b { color: var(--text); font-weight: 600; }
+#gOpen { position: fixed; left: 14px; top: 54px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; font: 600 14px/1 system-ui, sans-serif; background: var(--glass);
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: 1px solid var(--line); }
+.hidden { display: none !important; }
+@media (max-width: 560px), (max-height: 520px) { #guide { width: 230px; } #guide .gf { display: none; } }
+
+/* ---------- dat.gui as a glass sheet (top right) ---------- */
+.koi-gui.dg.ac { z-index: 21; }
+.koi-gui .dg { color: var(--text); font: 12px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-shadow: none; }
+.koi-gui .dg.a { margin: 14px 16px 0 0; }
+.koi-gui .dg.main { width: min(300px, calc(100vw - 32px)) !important; background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background-image: var(--sheen); transition: opacity 0.35s ease; }
+.koi-gui .dg.main > ul { height: auto !important; max-height: calc(100vh - 150px); overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.25) transparent; }
+.koi-gui .dg.main > ul::-webkit-scrollbar { width: 6px; background: transparent; }
+.koi-gui .dg.main > ul::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); border-radius: 6px; }
+.koi-gui .dg.main.taller-than-window { overflow-y: hidden; }
+.koi-gui .dg li:not(.folder) { background: transparent; border-bottom: 1px solid var(--line-soft); height: 32px; line-height: 32px; padding: 0 12px 0 14px; }
+.koi-gui .dg .cr, .koi-gui .dg .cr.number, .koi-gui .dg .cr.boolean, .koi-gui .dg .cr.function, .koi-gui .dg .cr.string { border-left: 0; height: 32px; }
+.koi-gui .dg li.folder { border-left: 0; }
+.koi-gui .dg li.title { position: relative; margin-left: 0; padding-left: 32px; height: 36px; line-height: 36px; background: rgba(255, 255, 255, 0.035); background-image: none;
+  font-weight: 600; font-size: 12.5px; letter-spacing: 0.02em; border-bottom: 1px solid var(--line-soft); }
+.koi-gui .dg li.title:hover { background: rgba(255, 255, 255, 0.07); }
+.koi-gui .dg li.title::before { content: ""; position: absolute; left: 14px; top: 50%; width: 6px; height: 6px; margin-top: -5px; border-right: 1.6px solid var(--muted);
+  border-bottom: 1.6px solid var(--muted); transform: rotate(45deg); transition: transform 0.2s ease, margin 0.2s ease; }
+.koi-gui .dg .closed li.title::before { transform: rotate(-45deg); margin-top: -3px; }
+.koi-gui .dg .closed li.title { background-image: none; }
+.koi-gui .dg .closed li:not(.title), .koi-gui .dg .closed ul li, .koi-gui .dg .closed ul li > * { height: 0; overflow: hidden; border: 0; }
+.koi-gui .dg .property-name { width: 44%; color: rgba(238, 241, 242, 0.84); font-weight: 500; }
+.koi-gui .dg .c { width: 56%; height: 32px; }
+.koi-gui .dg .cr.function .property-name { width: 100%; color: var(--text); }
+.koi-gui .dg .cr.function { position: relative; }
+.koi-gui .dg .cr.function::after { content: "›"; position: absolute; right: 13px; top: 0; color: var(--muted); font-size: 16px; }
+.koi-gui .dg .cr.function:hover, .koi-gui .dg .cr.boolean:hover { background: rgba(255, 255, 255, 0.06); }
+.koi-gui .dg .cr.function.accent .property-name { color: var(--accent); font-weight: 600; }
+/* number boxes */
+.koi-gui .dg .c input[type=text] { background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line-soft); border-radius: 7px; color: var(--text); height: 22px; margin-top: 5px;
+  padding: 0 6px; font: 500 11px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: right; }
+.koi-gui .dg .cr.number input[type=text], .koi-gui .dg .cr.string input[type=text] { color: var(--text); }
+.koi-gui .dg .c input[type=text]:hover { background: rgba(255, 255, 255, 0.1); }
+.koi-gui .dg .c input[type=text]:focus { background: rgba(255, 255, 255, 0.14); border-color: rgba(240, 137, 76, 0.6); }
+.koi-gui .dg .has-slider input[type=text] { width: 30%; }
+/* thin sliders with knobs */
+.koi-gui .dg .c .slider { position: relative; float: left; width: 63%; height: 32px; margin: 0 0 0 1px; background: transparent; }
+.koi-gui .dg .c .slider::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 3px; background: rgba(255, 255, 255, 0.16); }
+.koi-gui .dg .c .slider-fg { position: absolute; left: 0; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 3px; background: var(--accent); max-width: 100%; }
+.koi-gui .dg .c .slider-fg::after { content: ""; position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: #fbfbfb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); transition: transform 0.15s ease; }
+.koi-gui .dg .c .slider:hover { background: transparent; }
+.koi-gui .dg .c .slider:hover .slider-fg { background: #f59a61; }
+.koi-gui .dg .c .slider:hover .slider-fg::after { transform: scale(1.15); }
+/* pill toggles */
+.koi-gui .dg .c input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 34px; height: 19px; margin: 6.5px 0 0; border-radius: 19px; position: relative; cursor: pointer;
+  background: rgba(255, 255, 255, 0.14); border: 1px solid var(--line); transition: background 0.2s ease, border-color 0.2s ease; vertical-align: top; }
+.koi-gui .dg .c input[type=checkbox]::after { content: ""; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fbfbfb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); transition: transform 0.2s ease; }
+.koi-gui .dg .c input[type=checkbox]:checked { background: var(--accent); border-color: transparent; }
+.koi-gui .dg .c input[type=checkbox]:checked::after { transform: translateX(15px); }
+/* glass dropdowns */
+.koi-gui .dg .c select { appearance: none; -webkit-appearance: none; width: 100%; height: 24px; margin-top: 4px; padding: 0 26px 0 9px; border-radius: 8px; cursor: pointer;
+  color: var(--text); font: 500 12px/22px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.07) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c8cdd0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center; }
+.koi-gui .dg .c select:hover { background-color: rgba(255, 255, 255, 0.12); }
+.koi-gui .dg .c select:focus { outline: none; border-color: rgba(240, 137, 76, 0.6); }
+.koi-gui .dg .c select option { background: #1b2025; color: #eef1f2; }
+/* sticky Close bar */
+.koi-gui .dg.main .close-button { position: relative !important; width: auto !important; height: 30px; line-height: 30px; opacity: 1; background: rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 11.5px; letter-spacing: 0.06em; text-transform: uppercase; }
+.koi-gui .dg.main .close-button:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+.koi-gui .dg.main ul.closed + .close-button, .koi-gui .dg.main ul.closed ~ .close-button { border-top: 0; }
+@media (max-width: 560px) {
+  .koi-gui .dg.main > ul { max-height: calc(100vh - 170px); }
+  .koi-gui .dg.main:has(> ul.closed) { width: 118px !important; }
+}
+
+/* ---------- clean view: only the film ---------- */
+#hud, #guide, #gOpen, .koi-gui { transition: opacity 0.35s ease; }
+body.clean #dock, body.clean #guide, body.clean #gOpen, body.clean #hud, body.clean .koi-gui { opacity: 0 !important; pointer-events: none !important; }
+body.clean #dock *, body.clean .koi-gui * { pointer-events: none !important; }
 </style>
 </head>
 <body>
@@ -53,6 +181,35 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 <div id="hud" class="glass"><b id="fps">--</b> <span>fps</span> · <b id="ms">--</b> <span>ms</span></div>
 <div id="caption"><div class="c1"></div><div class="c2"></div></div>
 <div id="toast" class="glass"></div>
+<div id="guide" class="glass">
+  <div class="gh"><div class="gt">Guide<small>案内</small></div><button id="gClose" aria-label="Hide guide (I)" title="Hide guide (I)">×</button></div>
+  <ul>
+    <li><span class="k"><kbd>C</kbd></span>Camera mode</li>
+    <li><span class="k"><kbd>P</kbd></span>Hold shot</li>
+    <li><span class="k"><kbd>O</kbd></span>Freeze time</li>
+    <li><span class="k"><kbd>V</kbd><kbd>Esc</kbd></span>Clean view</li>
+    <li><span class="k"><kbd>E</kbd></span>Feed the koi</li>
+    <li><span class="k"><kbd>G</kbd></span>Stroke a koi</li>
+    <li><span class="k"><kbd>K</kbd></span>Follow a koi (next fish)</li>
+    <li><span class="k"><kbd>T</kbd></span>Weather &amp; season</li>
+    <li><span class="k"><kbd>M</kbd></span>Mute / unmute</li>
+    <li><span class="k"><kbd>H</kbd></span>Settings panel</li>
+    <li><span class="k"><kbd>I</kbd></span>This guide</li>
+  </ul>
+  <div class="gf"><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
+</div>
+<button id="gOpen" class="hidden" aria-label="Show guide (I)" title="Show guide (I)">?</button>
+<div id="dock" class="glass" role="toolbar" aria-label="Controls">
+  <button id="bCam" data-tip="Camera mode · C" aria-label="Camera mode (C)"><svg viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="M15.5 10.5l5.5-3v9l-5.5-3"/></svg><span class="lbl">Cinematic</span></button>
+  <button id="bHold" data-tip="Hold shot · P" aria-label="Hold shot (P)"><svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.5" height="14" rx="1"/><rect x="14" y="5" width="3.5" height="14" rx="1"/></svg><span class="lbl">Hold</span></button>
+  <button id="bFreeze" data-tip="Freeze time · O" aria-label="Freeze time (O)"><svg viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5s-4.5 4-4.5 8.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5"/></svg><span class="lbl">Freeze</span></button>
+  <button id="bClean" data-tip="Clean view · V" aria-label="Clean view (V)"><svg viewBox="0 0 24 24"><path d="M3.5 8V5.5a2 2 0 0 1 2-2H8M16 3.5h2.5a2 2 0 0 1 2 2V8M20.5 16v2.5a2 2 0 0 1-2 2H16M8 20.5H5.5a2 2 0 0 1-2-2V16"/><circle cx="12" cy="12" r="2.6"/></svg><span class="lbl">Clean</span></button>
+  <button id="bWeather" data-tip="Weather · T" aria-label="Weather (T)"><svg viewBox="0 0 24 24"><path d="M8.5 5V3.5M4.2 6.8l-1-1M13.8 6.8l1-1M3 11H1.5"/><path d="M5.6 12.4A3.6 3.6 0 1 1 12.3 9"/><path d="M8 19.5h9.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 8 19.5z"/></svg><span class="lbl">Sunny</span></button>
+  <button id="bSound" data-tip="Sound · M" aria-label="Sound (M)"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><g class="w"><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></g><g class="x"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg><span class="lbl">Sound</span></button>
+  <span class="sep"></span>
+  <button id="bStroke" data-tip="Stroke a koi · G" aria-label="Stroke a koi (G)"><svg viewBox="0 0 24 24"><path d="M8 12.5V5.8a1.4 1.4 0 0 1 2.8 0v5.2M10.8 11V4.4a1.4 1.4 0 0 1 2.8 0V11M13.6 11V5.4a1.4 1.4 0 0 1 2.8 0V12M16.4 12V8.2a1.4 1.4 0 0 1 2.8 0v5.8a7 7 0 0 1-7 7h-.6a6.5 6.5 0 0 1-5.2-2.6L4 15.1a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><span class="lbl">Stroke a koi</span></button>
+  <button id="bFeed" class="primary" data-tip="Feed the koi · E" aria-label="Feed the koi (E)"><svg viewBox="0 0 24 24"><path d="M5 12c2.5-3.6 5.8-5.2 9-5.2 2.8 0 4.9 1.7 6.5 5.2-1.6 3.5-3.7 5.2-6.5 5.2-3.2 0-6.5-1.6-9-5.2z"/><path d="M5 12 2 8.8v6.4z"/><circle cx="16.6" cy="11" r="0.9" fill="currentColor" stroke="none"/></svg><span class="lbl">Feed the koi</span></button>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
@@ -4888,7 +5045,7 @@ function koiCapY(f) {
   return trough - upper - Math.abs(Math.sin(f.pitch)) * 0.52 * f.size - Math.abs(Math.sin(f.roll)) * 0.1 * f.size;
 }
 function koiFloorY(f, x, z) { return floorHeight(x, z) + f.size * 0.1 * f.girth + 0.025 + Math.abs(Math.sin(f.pitch)) * 0.4 * f.size; }
-const _kv = new THREE.Vector3(), _kg = new THREE.Vector2(), _km = new THREE.Matrix4(), _ke = new THREE.Euler(), _kq = new THREE.Quaternion(), _ks = new THREE.Vector3();
+const _kv = new THREE.Vector3(), _kg = new THREE.Vector2(), _km = new THREE.Matrix4(), _ke = new THREE.Euler(), _kq = new THREE.Quaternion(), _ks = new THREE.Vector3(), _kgp = new THREE.Vector3();
 const koiCtl = { pose: false, attract: null, inspect: false, activity: 1 };
 function chooseKoiMode(f) {
   const act = env.koi;
@@ -5026,7 +5183,10 @@ function updateKoi(dt) {
     const gulp = Math.sin((1 - f.gulpA) * Math.PI) * (f.gulpA > 0 ? 1 : 0);
     const atSurface = koiCapY(f) - f.pos.y < 0.03;
     f.mouth = lerp(f.mouth, Math.max(gulp * (atSurface ? 1 : 0.32), f.mouthForce || 0), 1 - Math.exp(-10 * dt));
-    if (atSurface && gulp > 0.9 && !f.gulped) { f.gulped = true; const mx = f.pos.x + Math.cos(f.heading) * L * 0.5, mz = f.pos.z - Math.sin(f.heading) * L * 0.5; addDrop(mx, mz, 0.03 + L * 0.03, -0.004); }
+    if (atSurface && gulp > 0.9 && !f.gulped) {
+      f.gulped = true; const mx = f.pos.x + Math.cos(f.heading) * L * 0.5, mz = f.pos.z - Math.sin(f.heading) * L * 0.5; addDrop(mx, mz, 0.03 + L * 0.03, -0.004);
+      const v = AUDIO.near(_kgp.set(mx, WATER_Y, mz), 7); if (v > 0.02) AUDIO.gulp(f.size, v * 0.6);
+    }
     if (gulp < 0.2) f.gulped = false;
     // wakes when the back is close to the surface
     f.wakeT -= dt;
@@ -5691,6 +5851,164 @@ function showCaption(name, sub) {
   _capTimer = setTimeout(() => el.classList.remove('on'), 4200);
 }
 function hideCaption() { const el = document.getElementById('caption'); if (el) el.classList.remove('on'); }
+// ---------- audio: everything synthesised with Web Audio; starts on the first click or key ----------
+const AUDIO = {
+  ctx: null, started: false, muted: false, master: null, lowpass: null, dry: null, wet: null, loops: {}, nextBird: 6, nextKnock: 14, nextDrip: 1, buzzT: 0,
+  start() {
+    if (this.started) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    const c = this.ctx;
+    this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : P.volume;
+    this.lowpass = c.createBiquadFilter(); this.lowpass.type = 'lowpass'; this.lowpass.frequency.value = 18000; this.lowpass.Q.value = 0.5;
+    this.bus = c.createGain();
+    this.dry = c.createGain(); this.dry.gain.value = 0.82;
+    this.wet = c.createGain(); this.wet.gain.value = 0.3;
+    this.reverb = c.createConvolver(); this.reverb.buffer = this.impulse(2.2, 3.2);
+    this.bus.connect(this.dry); this.bus.connect(this.reverb); this.reverb.connect(this.wet);
+    this.dry.connect(this.lowpass); this.wet.connect(this.lowpass);
+    this.lowpass.connect(this.master); this.master.connect(c.destination);
+    const brown = this.noise('brown', 6), pink = this.noise('pink', 6), white = this.noise('white', 4);
+    this.loops.lap = this.loop(brown, 'bandpass', 420, 0.8, 0);
+    this.loops.rustle = this.loop(pink, 'highpass', 1900, 0.7, 0);
+    this.loops.falls = this.loop(pink, 'bandpass', 900, 0.45, 0);
+    this.loops.fallsLow = this.loop(brown, 'lowpass', 260, 0.7, 0);
+    this.loops.rain = this.loop(white, 'highpass', 2600, 0.5, 0);
+    this.loops.under = this.loop(brown, 'lowpass', 140, 0.9, 0);
+    this.started = true;
+  },
+  noise(kind, sec) {
+    const c = this.ctx, n = Math.floor(c.sampleRate * sec), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0);
+    let last = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < n; i++) {
+      const w = Math.random() * 2 - 1;
+      if (kind === 'white') d[i] = w * 0.5;
+      else if (kind === 'brown') { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+      else { b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852; b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898; d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926; }
+    }
+    // cross-fade the ends so the loop is seamless
+    const f = Math.floor(c.sampleRate * 0.05);
+    for (let i = 0; i < f; i++) { const t = i / f; d[i] = d[i] * t + d[n - f + i] * (1 - t); }
+    return b;
+  },
+  impulse(sec, decay) {
+    const c = this.ctx, n = Math.floor(c.sampleRate * sec), b = c.createBuffer(2, n, c.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+    return b;
+  },
+  loop(buf, type, freq, q, gain) {
+    const c = this.ctx, src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+    src.playbackRate.value = 0.9 + Math.random() * 0.2;
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = c.createGain(); g.gain.value = gain;
+    src.connect(f); f.connect(g); g.connect(this.bus);
+    src.start(0, Math.random() * buf.duration);
+    return { src, f, g };
+  },
+  env(g, t0, a, peak, d) { g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0 + a); g.gain.exponentialRampToValueAtTime(0.0001, t0 + a + d); },
+  tone(type, f0, f1, dur, peak, dest = this.bus, att = 0.004) {
+    if (!this.started) return;
+    const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+    o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(f1, 1), t + dur);
+    this.env(g, t, att, peak, dur); o.connect(g); g.connect(dest); o.start(t); o.stop(t + att + dur + 0.05);
+  },
+  burst(dur, type, freq, q, peak, att = 0.003) {
+    if (!this.started) return;
+    const c = this.ctx, t = c.currentTime, src = c.createBufferSource();
+    src.buffer = this._white || (this._white = this.noise('white', 1));
+    const f = c.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = c.createGain(); this.env(g, t, att, peak, dur);
+    src.connect(f); f.connect(g); g.connect(this.bus);
+    src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.1);
+  },
+  plip() { this.tone('sine', 1300 + Math.random() * 500, 480, 0.07, 0.05); this.burst(0.04, 'highpass', 3000, 0.7, 0.02); },
+  gulp(size = 0.5, vol = 1) { this.tone('sine', 230 / (0.5 + size), 95, 0.12, 0.16 * vol); this.burst(0.08, 'bandpass', 700, 1.5, 0.05 * vol); },
+  splash(size = 0.5, vol = 1) { this.burst(0.18 + size * 0.5, 'bandpass', 1400 / (0.6 + size), 0.6, (0.12 + size * 0.2) * vol); this.tone('sine', 300, 90, 0.15 + size * 0.2, (0.05 + size * 0.08) * vol); },
+  // distance attenuation for sounds placed in the garden (0 beyond the range)
+  near(pos, range = 8) { if (!this.started) return 0; const d = camera.position.distanceTo(pos); return d > range ? 0 : (1 - d / range) / (1 + d * 0.5); },
+  plop() { this.tone('sine', 420, 140, 0.18, 0.22); this.burst(0.3, 'bandpass', 900, 0.8, 0.12); },
+  thud() { this.tone('sine', 95, 60, 0.12, 0.12); this.burst(0.03, 'lowpass', 900, 0.7, 0.05); },
+  rattle() { if (!this.started) return; for (let i = 0; i < 9; i++) setTimeout(() => this.burst(0.02, 'bandpass', 3200 + Math.random() * 2500, 2, 0.035), i * 38 + Math.random() * 25); },
+  croak(amp = 1) {
+    if (!this.started) return;
+    const c = this.ctx;
+    for (let r = 0; r < 3; r++) {
+      const t = c.currentTime + r * 0.42;
+      const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(128, t); o.frequency.linearRampToValueAtTime(108, t + 0.3);
+      const am = c.createOscillator(), amg = c.createGain(); am.frequency.value = 26; amg.gain.value = 0.5; am.connect(amg);
+      const vg = c.createGain(); vg.gain.value = 0.5; amg.connect(vg.gain);
+      const f1 = c.createBiquadFilter(); f1.type = 'bandpass'; f1.frequency.value = 520; f1.Q.value = 5;
+      const f2 = c.createBiquadFilter(); f2.type = 'bandpass'; f2.frequency.value = 1450; f2.Q.value = 7;
+      const g = c.createGain(); this.env(g, t, 0.02, 0.18 * amp, 0.3);
+      o.connect(vg); vg.connect(f1); vg.connect(f2); f1.connect(g); f2.connect(g); g.connect(this.bus);
+      o.start(t); am.start(t); o.stop(t + 0.4); am.stop(t + 0.4);
+    }
+  },
+  bird() {
+    if (!this.started) return;
+    const c = this.ctx, t0 = c.currentTime, n = 2 + Math.floor(Math.random() * 4), base = 2600 + Math.random() * 1800;
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * (0.11 + Math.random() * 0.08);
+      const o = c.createOscillator(), g = c.createGain(), fm = c.createOscillator(), fg = c.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(base * (1 + Math.random() * 0.2), t); o.frequency.exponentialRampToValueAtTime(base * (0.7 + Math.random() * 0.6), t + 0.09);
+      fm.frequency.value = 45 + Math.random() * 30; fg.gain.value = 180; fm.connect(fg); fg.connect(o.frequency);
+      this.env(g, t, 0.01, 0.025, 0.09);
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
+      o.connect(g);
+      if (pan) { pan.pan.value = Math.random() * 1.6 - 0.8; g.connect(pan); pan.connect(this.bus); } else g.connect(this.bus);
+      o.start(t); fm.start(t); o.stop(t + 0.12); fm.stop(t + 0.12);
+    }
+  },
+  knock() {
+    // shishi-odoshi: the bamboo tips, empties and knocks against the stone
+    this.burst(0.05, 'bandpass', 1100, 3, 0.25, 0.001);
+    this.tone('sine', 720, 640, 0.35, 0.16, this.bus, 0.001);
+    this.tone('triangle', 360, 330, 0.25, 0.06, this.bus, 0.001);
+    setTimeout(() => this.burst(0.6, 'bandpass', 1800, 1.2, 0.03), 60);
+  },
+  drip() { this.tone('sine', 1500 + Math.random() * 900, 700, 0.09, 0.03); },
+  buzzNear(pos, speed) {
+    if (!this.started || this.buzzT > 0) return;
+    const d = pos.distanceTo(camera.position);
+    if (d > 2.2) return;
+    this.buzzT = 0.35;
+    const c = this.ctx, t = c.currentTime, o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+    o.type = 'sawtooth'; o.frequency.value = 24 + Math.random() * 8;
+    f.type = 'bandpass'; f.frequency.value = 180; f.Q.value = 0.8;
+    this.env(g, t, 0.05, 0.05 * (1 - d / 2.2) * (0.5 + speed * 0.3), 0.35);
+    o.connect(f); f.connect(g); g.connect(this.bus); o.start(t); o.stop(t + 0.45);
+  },
+  setMuted(m) {
+    this.muted = m; P.sound = !m;
+    try { localStorage.setItem('koi.muted', m ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : P.volume, this.ctx.currentTime, 0.08);
+    const b = document.getElementById('bSound'); if (b) b.classList.toggle('off', m);
+    if (window.GUI_REFRESH) GUI_REFRESH();
+  },
+  update(dt, excitement) {
+    if (!this.started) return;
+    const c = this.ctx, t = c.currentTime, under = camState.under;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : P.volume, t, 0.1);
+    this.lowpass.frequency.setTargetAtTime(under ? 420 : 18000, t, 0.12);
+    const wind = G.uWind.value, gust = G.uGust.value;
+    const dFalls = camera.position.distanceTo(FALLS.lip);
+    const set = (l, v) => l.g.gain.setTargetAtTime(v, t, 0.25);
+    set(this.loops.lap, (0.05 + wind * 0.12 + excitement * 0.2) * (1 - env.ice * 0.8));
+    set(this.loops.rustle, wind * (0.03 + gust * 0.12) * (1 - env.snow * 0.5));
+    set(this.loops.falls, 0.35 / (1 + dFalls * 0.45));
+    set(this.loops.fallsLow, 0.28 / (1 + dFalls * 0.4));
+    set(this.loops.rain, env.rain * 0.16);
+    set(this.loops.under, under ? 0.3 : 0);
+    this.dry.gain.setTargetAtTime(1 - env.rain * 0.25, t, 0.3);          // rain muffles the garden a little
+    this.buzzT -= dt;
+    this.nextBird -= dt; this.nextKnock -= dt; this.nextDrip -= dt;
+    if (this.nextBird < 0) { this.nextBird = (8 + Math.random() * 18) * (1 + env.rain * 2 + env.snow * 2); if (!under) this.bird(); }
+    if (this.nextKnock < 0) { this.nextKnock = 12 + Math.random() * 18; this.knock(); }
+    if (this.nextDrip < 0) { this.nextDrip = 0.6 + Math.random() * 2.4; if (dFalls < 6) this.drip(); }
+  },
+};
+window.AUDIO = AUDIO;
 // ---------- weather crossfade and precipitation ----------
 function setWeather(name, instant = false) {
   if (!WEATHER[name]) return;
@@ -5796,6 +6114,202 @@ function autoQuality(realDt) {
 /* =====================================================================================
    14. GUI, QUALITY, MAIN LOOP
    ===================================================================================== */
+// ---------- UI: dock, guide, dat.gui glass sheet, shortcuts, clicks ----------
+let gui = null;
+const UI = { clean: false, guide: true, panel: true, controllers: [] };
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
+const CLOSEUPS = {
+  'Koi from above': () => { const f = highestKoi(); KOI.view([f.pos.x + 0.05, WATER_Y + 1.1, f.pos.z + 0.05], [f.pos.x, f.pos.y, f.pos.z]); },
+  'Lotus': () => KOI.view([6.3, 1.0, 2.4], [4.9, 0.4, 0.45]),
+  'Frog': () => { const g = FROG.group.position; KOI.view([g.x + 0.45, WATER_Y + 0.16, g.z + 0.3], [g.x, g.y + 0.03, g.z]); },
+  'Slider': () => { const p = TURTLE.pos; KOI.view([p.x + 0.8, p.y + 0.35, p.z + 0.6], [p.x, p.y + 0.05, p.z]); },
+  'Waterfall': () => KOI.view([-0.3, 1.2, -2.2], [-0.35, 0.6, -5.2]),
+  'Bridge': () => KOI.view([-1.2, 1.3, 1.2], [2.6, 0.5, -0.9]),
+  'Lantern': () => KOI.view([-0.6, 1.4, 8.2], [-2.0, 1.0, 5.9]),
+  'Underwater': () => KOI.view([-1.5, -0.55, 1.5], [-2.5, -0.5, -2.5]),
+};
+function buildGUI() {
+  if (!window.dat) return;
+  dat.GUI.TEXT_CLOSED = 'Close'; dat.GUI.TEXT_OPEN = 'Settings';
+  gui = new dat.GUI({ width: 300, hideable: false });
+  gui.domElement.parentElement.classList.add('koi-gui');
+  const add = (f, ...a) => { const c = f.add(...a); UI.controllers.push(c); return c; };
+  const env1 = gui.addFolder('Environment');
+  add(env1, P, 'weather', WEATHER_NAMES).name('Weather').onChange((v) => setWeather(v));
+  add(env1, P, 'tod', 6, 19, 0.05).name('Time of day');
+  add(env1, P, 'azimuth', 0, 360, 1).name('Sun azimuth');
+  add(env1, P, 'wind', 0, 1, 0.01).name('Wind');
+  add(env1, P, 'windDir', 0, 360, 1).name('Wind direction');
+  const wat = gui.addFolder('Water');
+  add(wat, P, 'clarity', 0.4, 3, 0.01).name('Clarity');
+  add(wat, P, 'waveHeight', 0, 2, 0.01).name('Wave height');
+  add(wat, P, 'caustics', 0, 2, 0.01).name('Caustics');
+  const koi = gui.addFolder('Koi');
+  add(koi, P, 'fishCount', 0, MAX_KOI, 1).name('Fish');
+  add(koi, { feed: () => startFeed() }, 'feed').name('Feed the koi').__li.classList.add('accent');
+  const ren = gui.addFolder('Rendering');
+  add(ren, P, 'quality', ['High', 'Low']).name('Quality').onChange((v) => setQuality(v));
+  add(ren, P, 'autoDrop').name('Auto-drop');
+  add(ren, P, 'exposure', 0.3, 2, 0.01).name('Exposure');
+  add(ren, P, 'bloom', 0, 1, 0.01).name('Bloom');
+  add(ren, P, 'bloomThreshold', 0.2, 3, 0.01).name('Bloom threshold');
+  add(ren, P, 'ssao', 0, 2, 0.01).name('SSAO');
+  add(ren, P, 'godRays', 0, 2, 0.01).name('God rays');
+  add(ren, P, 'grain', 0, 0.05, 0.001).name('Grain');
+  add(ren, P, 'vignette', 0, 1, 0.01).name('Vignette');
+  add(ren, P, 'sharpen', 0, 1, 0.01).name('Sharpening');
+  const lens = gui.addFolder('Lens');
+  add(lens, P, 'dof').name('Depth of field');
+  add(lens, P, 'fstop', 1.4, 22, 0.1).name('f-stop');
+  add(lens, P, 'maxBokeh', 2, 30, 0.5).name('Max bokeh');
+  const cam = gui.addFolder('Camera');
+  add(cam, P, 'tour').name('Film tour').onChange((v) => setCamMode(v ? 'Cinematic' : 'Manual'));
+  add(cam, P, 'letterbox').name('Letterbox');
+  add(cam, P, 'seasonLoop').name('Season each loop');
+  add(cam, P, 'camMode', ['Cinematic', 'Manual', 'Follow koi']).name('Mode').onChange((v) => setCamMode(v));
+  add(cam, P, 'followFish', 0, MAX_KOI - 1, 1).name('Follow').onChange((v) => { CAM.follow = v; });
+  add(cam, P, 'pathSpeed', 0.2, 3, 0.01).name('Path speed');
+  add(cam, P, 'stayAbove').name('Stay above water');
+  add(cam, P, 'hold').name('Hold shot').onChange(() => syncDock());
+  add(cam, P, 'freeze').name('Freeze time').onChange(() => syncDock());
+  add(cam, P, 'clean').name('Clean view').onChange((v) => setClean(v));
+  add(cam, P, 'volume', 0, 1, 0.01).name('Volume');
+  add(cam, P, 'sound').name('Sound').onChange((v) => { AUDIO.start(); AUDIO.setMuted(!v); });
+  const cu = gui.addFolder('Close-ups');
+  for (const [k, fn] of Object.entries(CLOSEUPS)) add(cu, { go: fn }, 'go').name(k);
+  env1.open();
+  if (window.innerWidth < 900) gui.close();
+  window.GUI_REFRESH = () => { for (const c of UI.controllers) c.updateDisplay(); syncDock(); };
+}
+function syncDock() {
+  const t = (id, on) => { const b = document.getElementById(id); if (b) b.classList.toggle('on', !!on); };
+  t('bHold', P.hold); t('bFreeze', P.freeze); t('bClean', UI.clean);
+  const s = document.getElementById('bSound'); if (s) s.classList.toggle('off', AUDIO.muted);
+  const m = document.getElementById('bCam'); if (m) m.querySelector('.lbl').textContent = CAM.mode === 'Follow koi' ? 'Follow' : CAM.mode;
+  const w = document.getElementById('bWeather'); if (w) w.querySelector('.lbl').textContent = P.weather;
+}
+function setClean(v) {
+  UI.clean = v; P.clean = v;
+  document.body.classList.toggle('clean', v);
+  if (v) toast('Clean view — press V or Esc to exit');
+  syncDock();
+}
+function setGuide(v) {
+  UI.guide = v; lsSet('koi.guide', v ? '1' : '0');
+  document.getElementById('guide').classList.toggle('hidden', !v);
+  document.getElementById('gOpen').classList.toggle('hidden', v);
+}
+function setPanel(v) { UI.panel = v; const el = gui && gui.domElement.parentElement; if (el) el.style.display = v ? '' : 'none'; }
+function cycleCam() { const modes = ['Cinematic', 'Manual', 'Follow koi']; setCamMode(modes[(modes.indexOf(CAM.mode) + 1) % 3]); P.tour = CAM.mode === 'Cinematic'; }
+function cycleWeather() { setWeather(WEATHER_NAMES[(WEATHER_NAMES.indexOf(P.weather) + 1) % WEATHER_NAMES.length]); }
+function followNext() { if (CAM.mode !== 'Follow koi') { CAM.follow = P.followFish; setCamMode('Follow koi'); } else { CAM.follow = (CAM.follow + 1) % Math.max(P.fishCount, 1); P.followFish = CAM.follow; toast('Following ' + FISH[CAM.follow].variety); } P.tour = false; }
+function setupUI() {
+  buildGUI();
+  // automated screenshots show only the scene unless ?ui is given
+  if (TEST && !QS.has('ui')) { UI.clean = true; document.body.classList.add('clean'); }
+  const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); AUDIO.start(); fn(); b.blur(); }); };
+  on('bCam', cycleCam);
+  on('bHold', () => { P.hold = !P.hold; toast(P.hold ? 'Holding this shot' : 'Tour resumed'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
+  on('bFreeze', () => { P.freeze = !P.freeze; toast(P.freeze ? 'Time frozen' : 'Time flowing'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
+  on('bClean', () => setClean(!UI.clean));
+  on('bWeather', cycleWeather);
+  on('bSound', () => AUDIO.setMuted(!AUDIO.muted));
+  on('bStroke', () => startStroke());
+  on('bFeed', () => startFeed());
+  on('gClose', () => setGuide(false));
+  on('gOpen', () => setGuide(true));
+  const small = window.innerWidth < 560 || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  setGuide(lsGet('koi.guide', small ? '0' : '1') === '1');
+  AUDIO.muted = lsGet('koi.muted', '0') === '1'; P.sound = !AUDIO.muted;
+  syncDock();
+  window.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
+    AUDIO.start();
+    const k = e.code;
+    if (k === 'Space') e.preventDefault();
+    if (e.repeat) return;
+    if (k === 'KeyC') cycleCam();
+    else if (k === 'KeyP') { P.hold = !P.hold; toast(P.hold ? 'Holding this shot' : 'Tour resumed'); }
+    else if (k === 'KeyO') { P.freeze = !P.freeze; toast(P.freeze ? 'Time frozen' : 'Time flowing'); }
+    else if (k === 'KeyV') setClean(!UI.clean);
+    else if (k === 'Escape') { if (UI.clean) setClean(false); }
+    else if (k === 'KeyE') startFeed();
+    else if (k === 'KeyG') startStroke();
+    else if (k === 'KeyK') followNext();
+    else if (k === 'KeyT') cycleWeather();
+    else if (k === 'KeyM') AUDIO.setMuted(!AUDIO.muted);
+    else if (k === 'KeyH') setPanel(!UI.panel);
+    else if (k === 'KeyI') setGuide(!UI.guide);
+    else return;
+    syncDock(); if (window.GUI_REFRESH) GUI_REFRESH();
+  });
+  // clicks on the canvas: frog, water (drags look around in manual mode)
+  const el = renderer.domElement;
+  let down = null;
+  el.addEventListener('pointerdown', (e) => { AUDIO.start(); down = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+  el.addEventListener('pointerup', (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t;
+    down = null;
+    if (moved < 6 && dt < 450) handleClick(e.clientX, e.clientY);
+  });
+}
+const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _hit = new THREE.Vector3(), _wplane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER_Y);
+function handleClick(cx, cy) {
+  const r = renderer.domElement.getBoundingClientRect();
+  _ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+  _ray.setFromCamera(_ndc, camera);
+  // the frog
+  if (FROG.group) {
+    const c = FROG.group.position.clone().add(new THREE.Vector3(0, 0.03, 0));
+    const tol = Math.max(0.07, camera.position.distanceTo(c) * 0.012);
+    if (_ray.ray.distanceSqToPoint(c) < tol * tol && camera.position.distanceTo(c) < 25) { frogLeap(); return; }
+  }
+  if (camState.under) return;
+  if (_ray.ray.intersectPlane(_wplane, _hit) && pondSDF(_hit.x, _hit.z) < -0.03) {
+    // make sure the bank is not in the way
+    const d = camera.position.distanceTo(_hit), steps = 24;
+    for (let i = 1; i < steps; i++) { const p = _ray.ray.at((i / steps) * d, _v3); if (p.y < terrainHeight(p.x, p.z) - 0.01) return; }
+    splashAt(_hit.x, _hit.z, 0.5);
+  }
+}
+// splash: ripple ring, droplets and sound
+const SPLASH = { list: [], mesh: null };
+function buildSplash() {
+  const m = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xdfe9ee, roughness: 0.1, transparent: true, opacity: 0.7 }), { key: 'drops', noWeather: true, defines: { KEEP_ALPHA: '' } });
+  SPLASH.mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), m, 300);
+  SPLASH.mesh.count = 0; SPLASH.mesh.frustumCulled = false; SPLASH.mesh.layers.set(LAYER.ABOVE);
+  SPLASH.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(SPLASH.mesh);
+}
+function splashAt(x, z, size = 0.5) {
+  addDrop(x, z, 0.05 + size * 0.06, -(0.008 + size * 0.012));
+  addDrop(x, z, 0.18 + size * 0.1, 0.004 + size * 0.004);
+  const n = Math.round(10 + size * 30);
+  for (let i = 0; i < n && SPLASH.list.length < 300; i++) {
+    const a = Math.random() * Math.PI * 2, sp = (0.4 + Math.random() * 0.9) * (0.6 + size);
+    SPLASH.list.push({ x, y: WATER_Y + 0.01, z, vx: Math.cos(a) * sp * 0.45, vy: (1.2 + Math.random() * 1.4) * (0.6 + size * 0.8), vz: Math.sin(a) * sp * 0.45, r: 0.004 + Math.random() * 0.006 * (0.5 + size) });
+  }
+  AUDIO.splash(size);
+}
+const _sm = new THREE.Matrix4();
+function updateSplash(dt) {
+  if (!SPLASH.mesh) return;
+  let n = 0;
+  for (let i = SPLASH.list.length - 1; i >= 0; i--) {
+    const d = SPLASH.list[i];
+    d.vy -= 9.81 * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+    if (d.y < WATER_Y && d.vy < 0) { SPLASH.list.splice(i, 1); if (Math.random() < 0.3) addDrop(d.x, d.z, 0.02, -0.0012); continue; }
+    _sm.makeScale(d.r, d.r * 1.4, d.r); _sm.setPosition(d.x, d.y, d.z);
+    SPLASH.mesh.setMatrixAt(n++, _sm);
+  }
+  SPLASH.mesh.count = n; SPLASH.mesh.instanceMatrix.needsUpdate = true;
+}
+// ---------- interactions: feeding and stroking ----------
+const FEED = { excite: 0 };
+function startFeed() {}
+function startStroke() {}
 const clock = { t: 0, elapsed: 0, last: performance.now(), dt: 1 / 60, frame: 0, fixed: TEST };
 const perf = { fps: 60, ms: 16.7, acc: 0, n: 0, lastHud: 0 };
 function resize() {
@@ -5884,6 +6398,8 @@ function step(dt, realDt = dt) {
   updatePads(P.freeze ? 0 : dt);
   updateFalling(P.freeze ? 0 : dt);
   updatePondLife(P.freeze ? 0 : dt);
+  updateSplash(P.freeze ? 0 : dt);
+  AUDIO.update(realDt, FEED.excite);
   renderFrame();
   const ms = performance.now() - t0;
   perf.acc += realDt; perf.n++;
@@ -5996,6 +6512,8 @@ async function init() {
   shadowCam = new THREE.PerspectiveCamera(10, 1, 0.1, 1);
   shadowCam.position.set(0, -5000, 0); shadowCam.lookAt(0, -6000, 0); shadowCam.layers.enableAll(); shadowCam.updateMatrixWorld();
   setupInput();
+  buildSplash();
+  setupUI();
   lookAt(0.6, 2.4, 10.5, 0, -0.3, 0);
   CAM.mode = TEST ? 'Manual' : P.camMode;
   G.tRipple.value = null;
