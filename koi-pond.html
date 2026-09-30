@@ -3231,6 +3231,416 @@ function updateFalling(dt) {
   FALL.floatMesh.count = m; FALL.floatMesh.instanceMatrix.needsUpdate = true;
 }
 
+// ---------- pond life: frog, turtle, dragonflies, underwater weed, bubbles ----------
+// vertex-coloured part helper: ellipsoid from a lathe, coloured by a function of the local position
+function blobGeom(rx, ry, rz, segs, colFn, profile = null) {
+  const prof = profile || Array.from({ length: 11 }, (_, i) => { const a = -Math.PI / 2 + (i / 10) * Math.PI; return [Math.max(Math.cos(a), 1e-4), Math.sin(a)]; });
+  prof[0][0] = 0; prof[prof.length - 1][0] = 0;
+  const g = weld(latheGeom(prof, segs));
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * rx, p.getY(i) * ry, p.getZ(i) * rz);
+  g.computeVertexNormals();
+  return fillAttr(g, 'color', 3, (x, y, z) => colFn(x, y, z));
+}
+function colourMesh(parts, mat) {
+  const g = mergeGeoms(parts.map((q) => keepAttrs(q, ['position', 'normal', 'color'])));
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function wetSkin(key, cc = 0.8) {
+  return patchMaterial(new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.5, clearcoat: cc, clearcoatRoughness: 0.12, envMapIntensity: 0.9 }), { key, porosity: 0, noWeather: true });
+}
+// ---------- frog (tonosama-gaeru) on a lily pad; click to leap ----------
+const FROG = { group: null, pad: null, state: 'sit', t: 0, from: new THREE.Vector3(), to: new THREE.Vector3(), yaw: 0, blinkT: 2, throat: 0, legs: null, eyeL: null, croakT: 8 };
+function buildFrog() {
+  const spots = (x, y, z) => {
+    const n = fbm3(x * 55, y * 55, z * 55, 2, 71);
+    const green = [0.12, 0.3, 0.06], dark = [0.02, 0.035, 0.015], belly = [0.72, 0.7, 0.55], stripe = [0.45, 0.55, 0.22];
+    if (y < -0.004) return belly;
+    if (Math.abs(z) < 0.0035 && y > 0.008) return stripe;
+    return n > 0.25 ? dark : green.map((c) => c * (0.85 + 0.3 * fbm3(x * 20, y * 20, z * 20, 2, 72)));
+  };
+  const body = blobGeom(0.034, 0.016, 0.022, 20, spots);
+  body.rotateZ(0.22); body.translate(0, 0.02, 0);
+  const head = blobGeom(0.018, 0.011, 0.02, 18, spots); head.translate(0.03, 0.028, 0);
+  const parts = [body, head];
+  const legCol = (x, y, z) => (fbm3(x * 70, y * 70, z * 70, 2, 73) > 0.2 ? [0.03, 0.05, 0.02] : [0.14, 0.3, 0.07]);
+  for (const s of [1, -1]) {
+    const arm = blobGeom(0.012, 0.004, 0.004, 8, legCol); arm.rotateZ(1.2); arm.rotateY(s * 0.5); arm.translate(0.03, 0.009, s * 0.017); parts.push(arm);
+    const eye = blobGeom(0.0065, 0.006, 0.0065, 12, (x, y, z) => (x > 0.003 ? (Math.abs(y) < 0.0012 && x > 0.005 ? [0.01, 0.01, 0.01] : [0.6, 0.45, 0.12]) : [0.12, 0.28, 0.07]));
+    eye.rotateY(-s * 0.9); eye.translate(0.033, 0.039, s * 0.011); parts.push(eye);
+  }
+  const mat = wetSkin('frog', 0.9);
+  const g = new THREE.Group();
+  g.add(colourMesh(parts, mat));
+  // hind legs as separate pieces so they can fold and extend
+  FROG.legs = [];
+  for (const s of [1, -1]) {
+    const leg = new THREE.Group();
+    const thigh = blobGeom(0.016, 0.0065, 0.0065, 10, legCol); thigh.translate(-0.016, 0, 0);
+    const shin = blobGeom(0.016, 0.005, 0.005, 10, legCol); shin.translate(-0.016, 0, 0);
+    const foot = blobGeom(0.014, 0.002, 0.008, 10, () => [0.1, 0.2, 0.06]); foot.translate(-0.014, 0, 0);
+    const mT = colourMesh([thigh], mat), mS = colourMesh([shin], mat), mF = colourMesh([foot], mat);
+    mS.position.set(-0.032, 0, 0); mF.position.set(-0.032, 0, 0);
+    mT.add(mS); mS.add(mF);
+    leg.add(mT); leg.position.set(-0.022, 0.012, s * 0.016);
+    leg.userData = { s, thigh: mT, shin: mS, foot: mF };
+    g.add(leg); FROG.legs.push(leg);
+  }
+  setLayer(g, LAYER.ABOVE);
+  scene.add(g);
+  FROG.group = g;
+  FROG.pad = PADS.reduce((best, p) => (!best || Math.hypot(p.x + 4.4, p.z + 2.2) < Math.hypot(best.x + 4.4, best.z + 2.2) ? p : best), null);
+  FROG.yaw = Math.random() * 6;
+  poseFrog(0);
+}
+function poseFrog(ext) {
+  for (const leg of FROG.legs) {
+    const { s, thigh, shin, foot } = leg.userData;
+    thigh.rotation.set(0, s * lerp(2.3, 2.9, ext), lerp(0.25, -0.1, ext));
+    shin.rotation.set(0, s * lerp(-2.6, -0.2, ext), 0);
+    foot.rotation.set(0, s * lerp(2.2, 0.3, ext), 0);
+  }
+}
+function frogLeap() {
+  if (FROG.state !== 'sit' || !FROG.pad) return false;
+  const cur = FROG.pad;
+  const cand = PADS.filter((p) => p !== cur && Math.hypot(p.x - cur.x, p.z - cur.z) > 0.45 && Math.hypot(p.x - cur.x, p.z - cur.z) < 1.8);
+  const target = cand.length ? cand[Math.floor(Math.random() * cand.length)] : cur;
+  FROG.from.copy(FROG.group.position);
+  FROG.next = target;
+  FROG.state = 'leap'; FROG.t = 0;
+  FROG.yaw = Math.atan2(-(target.z - cur.z), target.x - cur.x);
+  addDrop(cur.x, cur.z, 0.06, -0.004);
+  if (window.AUDIO) AUDIO.croak(0.5);
+  return true;
+}
+function updateFrog(dt) {
+  if (!FROG.group) return;
+  const g = FROG.group;
+  if (FROG.state === 'sit' && FROG.pad) {
+    const p = FROG.pad;
+    g.position.set(p.x, WATER_Y + waveHeight(p.x, p.z) + 0.006, p.z);
+    g.rotation.set(0, FROG.yaw, 0);
+    FROG.croakT -= dt;
+    if (FROG.croakT < 0) { FROG.croakT = 9 + Math.random() * 18; FROG.throat = 1; if (window.AUDIO) AUDIO.croak(1); }
+    FROG.throat = Math.max(0, FROG.throat - dt * 1.4);
+    g.scale.set(1, 1 + Math.sin(clock.t * 9) * 0.02 * FROG.throat, 1 + Math.sin(clock.t * 9) * 0.05 * FROG.throat);
+    poseFrog(0);
+  } else if (FROG.state === 'leap') {
+    FROG.t += dt / 0.6;
+    const t = Math.min(FROG.t, 1), tp = FROG.next;
+    const tx = tp.x, tz = tp.z, ty = WATER_Y + waveHeight(tx, tz) + 0.006;
+    g.position.set(lerp(FROG.from.x, tx, t), lerp(FROG.from.y, ty, t) + Math.sin(t * Math.PI) * 0.28, lerp(FROG.from.z, tz, t));
+    g.rotation.set(0, FROG.yaw, -Math.cos(t * Math.PI) * 0.5);
+    poseFrog(Math.sin(Math.min(t * 1.6, 1) * Math.PI * 0.5) * (1 - smoothstep(0.75, 1, t)));
+    if (t >= 1) {
+      FROG.state = 'sit'; FROG.pad = tp;
+      tp.vx += Math.cos(FROG.yaw) * 0.12; tp.vz -= Math.sin(FROG.yaw) * 0.12;
+      addDrop(tx, tz, 0.08, -0.006);
+      if (window.AUDIO) { AUDIO.thud(); AUDIO.splash(0.2); }
+    }
+  }
+}
+// ---------- yellow-bellied slider basking on its rock ----------
+function makeShellTexture() {
+  const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  // carapace in polar layout: centre = top of the dome, radius = down to the rim
+  ctx.fillStyle = '#3a3a1c'; ctx.fillRect(0, 0, S, S);
+  const R = mulberry32(12);
+  const cx = S / 2, cy = S / 2;
+  // pleural scutes with yellow vertical bars
+  for (let k = 0; k < 8; k++) {
+    const a0 = (k / 8) * Math.PI * 2, a1 = ((k + 1) / 8) * Math.PI * 2;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a0) * 90, cy + Math.sin(a0) * 90); ctx.arc(cx, cy, 200, a0, a1); ctx.lineTo(cx + Math.cos(a1) * 90, cy + Math.sin(a1) * 90); ctx.closePath();
+    ctx.fillStyle = `hsl(${55 + R() * 8},${35 + R() * 10}%,${17 + R() * 5}%)`; ctx.fill();
+    ctx.strokeStyle = '#141408'; ctx.lineWidth = 5; ctx.stroke();
+    const am = (a0 + a1) / 2;
+    ctx.strokeStyle = 'rgba(220,200,60,0.85)'; ctx.lineWidth = 9;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(am) * 110, cy + Math.sin(am) * 110); ctx.lineTo(cx + Math.cos(am) * 190, cy + Math.sin(am) * 190); ctx.stroke();
+  }
+  // vertebral scutes
+  for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.arc(cx, cy, 90 - k * 16, 0, 7); ctx.strokeStyle = '#141408'; ctx.lineWidth = 4; ctx.stroke(); }
+  // marginal scutes with yellow lower edge
+  for (let k = 0; k < 24; k++) {
+    const a0 = (k / 24) * Math.PI * 2, a1 = ((k + 1) / 24) * Math.PI * 2;
+    ctx.beginPath(); ctx.arc(cx, cy, 250, a0, a1); ctx.arc(cx, cy, 200, a1, a0, true); ctx.closePath();
+    ctx.fillStyle = '#2c2a14'; ctx.fill(); ctx.strokeStyle = '#141408'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#c9b13a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(cx, cy, 246, a0 + 0.05, a1 - 0.05); ctx.stroke();
+  }
+  for (let k = 0; k < 2500; k++) { ctx.fillStyle = `rgba(${R() * 60},${R() * 50},0,0.15)`; ctx.fillRect(R() * S, R() * S, 2, 2); }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO;
+  TEX.shell = t;
+}
+const TURTLE = { group: null, state: 'bask', t: 0, timer: 60 + Math.random() * 60, pos: new THREE.Vector3(), yaw: 0, legs: [], head: null, swimT: 0, target: new THREE.Vector3(), obstacle: null };
+function buildTurtle() {
+  makeShellTexture();
+  const g = new THREE.Group();
+  // carapace: dome with polar UVs into the scute texture
+  const shellG = latheGeom([[0.128, 0.0], [0.126, 0.015], [0.115, 0.04], [0.09, 0.065], [0.05, 0.08], [0.0, 0.085]], 36);
+  const p = shellG.attributes.position, uv = shellG.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), z = p.getZ(i), y = p.getY(i);
+    p.setXYZ(i, x * 1.22, y, z);
+    const r = Math.hypot(x, z) / 0.128, a = Math.atan2(z, x);
+    uv.setXY(i, 0.5 + Math.cos(a) * r * 0.49, 0.5 + Math.sin(a) * r * 0.49);
+  }
+  shellG.computeVertexNormals();
+  const shellMat = patchMaterial(new THREE.MeshPhysicalMaterial({ map: TEX.shell, roughness: 0.55, clearcoat: 0.7, clearcoatRoughness: 0.2 }), { key: 'shell', porosity: 0.1, noWeather: true });
+  const shell = new THREE.Mesh(shellG, shellMat); shell.castShadow = true; shell.receiveShadow = true;
+  g.add(shell);
+  const skin = (x, y, z) => { const st = Math.sin(z * 300 + x * 60 + y * 90) > 0.82; return st ? [0.6, 0.52, 0.1] : [0.07, 0.08, 0.035]; };
+  const skinMat = wetSkin('turtleSkin', 0.6);
+  const plastron = blobGeom(0.13, 0.012, 0.1, 24, () => [0.62, 0.55, 0.18]); plastron.translate(0, 0.006, 0);
+  g.add(colourMesh([plastron], skinMat));
+  // head and neck (yellow patch behind the eye)
+  const head = new THREE.Group();
+  const neck = blobGeom(0.05, 0.02, 0.02, 12, skin); neck.translate(0.03, 0, 0);
+  const skull = blobGeom(0.032, 0.02, 0.022, 14, (x, y, z) => (Math.abs(z) > 0.014 && y > -0.002 && x < 0.012 && x > -0.01 ? [0.8, 0.68, 0.12] : skin(x, y, z)));
+  skull.translate(0.085, 0.006, 0);
+  const eyes = [1, -1].map((s) => { const e = blobGeom(0.005, 0.005, 0.004, 10, () => [0.02, 0.02, 0.01]); e.translate(0.094, 0.013, s * 0.019); return e; });
+  head.add(colourMesh([neck, skull, ...eyes], skinMat));
+  head.position.set(0.14, 0.025, 0);
+  g.add(head); TURTLE.head = head;
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const leg = blobGeom(0.04, 0.011, 0.018, 10, skin); leg.translate(0.025, 0, 0);
+    const lm = colourMesh([leg], skinMat);
+    const pivot = new THREE.Group(); pivot.add(lm);
+    pivot.position.set(sx * 0.085, 0.012, sz * 0.085);
+    pivot.rotation.y = Math.atan2(-sz, sx) * 0.9;
+    pivot.userData = { sx, sz, base: pivot.rotation.y };
+    g.add(pivot); TURTLE.legs.push(pivot);
+  }
+  const tail = blobGeom(0.04, 0.008, 0.008, 8, skin); tail.translate(-0.17, 0.01, 0);
+  g.add(colourMesh([tail], skinMat));
+  setLayer(g, LAYER.BOTH);
+  scene.add(g);
+  TURTLE.group = g;
+  TURTLE.home = new THREE.Vector3(TURTLE_ROCK.x - 0.05, TURTLE_ROCK.top - 0.012, TURTLE_ROCK.z + 0.02);
+  TURTLE.pos.copy(TURTLE.home);
+  TURTLE.yaw = 0.6;
+  TURTLE.obstacle = { x: 0, z: 0, r: 0.25, top: -9, bottom: -9 };
+  OBSTACLES.push(TURTLE.obstacle);
+  updateTurtle(0);
+}
+function updateTurtle(dt) {
+  const T = TURTLE, g = T.group;
+  if (!g) return;
+  T.t += dt;
+  const legs = (amp, spd) => T.legs.forEach((l, i) => { l.rotation.y = l.userData.base + Math.sin(clock.t * spd + i * 1.7) * amp; });
+  if (T.state === 'bask') {
+    T.timer -= dt;
+    T.pos.copy(T.home);
+    g.position.copy(T.pos); g.rotation.set(0, T.yaw, 0.18);
+    T.head.rotation.set(0, Math.sin(clock.t * 0.13) * 0.5, 0.25 + Math.sin(clock.t * 0.07) * 0.08);
+    legs(0.02, 0.5);
+    if (T.timer < 0) { T.state = 'slide'; T.t = 0; T.from = T.pos.clone(); T.yaw = Math.atan2(-(TURTLE_ROCK.z + 0.8 - T.pos.z), TURTLE_ROCK.x + 0.9 - T.pos.x); }
+  } else if (T.state === 'slide') {
+    const t = Math.min(T.t / 1.2, 1);
+    const dir = new THREE.Vector3(Math.cos(T.yaw), 0, -Math.sin(T.yaw));
+    T.pos.copy(T.from).addScaledVector(dir, t * 0.55); T.pos.y = lerp(T.from.y, WATER_Y - 0.06, t * t);
+    g.position.copy(T.pos); g.rotation.set(0, T.yaw, -0.5 * t);
+    if (t >= 1) {
+      T.state = 'swim'; T.t = 0; T.swimT = 20 + Math.random() * 20;
+      addDrop(T.pos.x, T.pos.z, 0.12, -0.012);
+      if (window.AUDIO) AUDIO.plop();
+      pickTurtleTarget();
+    }
+  } else if (T.state === 'swim') {
+    T.swimT -= dt;
+    const to = new THREE.Vector3().subVectors(T.target, T.pos); to.y = 0;
+    if (to.length() < 0.3) pickTurtleTarget();
+    const want = Math.atan2(-to.z, to.x);
+    T.yaw += clamp(wrapAngle(want - T.yaw), -0.9 * dt, 0.9 * dt);
+    const sp = 0.16;
+    T.pos.x += Math.cos(T.yaw) * sp * dt; T.pos.z -= Math.sin(T.yaw) * sp * dt;
+    if (pondSDF(T.pos.x, T.pos.z) > -0.25) { const gr = pondSDFGrad(T.pos.x, T.pos.z, new THREE.Vector2()); T.pos.x -= gr.x * 0.02; T.pos.z -= gr.y * 0.02; }
+    T.pos.y = WATER_Y - 0.045 + waveHeight(T.pos.x, T.pos.z) * 0.5;
+    g.position.copy(T.pos); g.rotation.set(0, T.yaw, 0.05);
+    T.head.rotation.set(0, Math.sin(clock.t * 0.8) * 0.2, 0.3);
+    legs(0.5, 5);
+    if (Math.random() < dt * 2) addDrop(T.pos.x + Math.cos(T.yaw) * 0.2, T.pos.z - Math.sin(T.yaw) * 0.2, 0.04, -0.0008);
+    if (T.swimT < 0) { T.target.copy(T.home); T.state = 'return'; }
+  } else if (T.state === 'return') {
+    const to = new THREE.Vector3(T.home.x + 0.5, 0, T.home.z + 0.35).sub(T.pos); to.y = 0;
+    const want = Math.atan2(-to.z, to.x);
+    T.yaw += clamp(wrapAngle(want - T.yaw), -1.2 * dt, 1.2 * dt);
+    T.pos.x += Math.cos(T.yaw) * 0.15 * dt; T.pos.z -= Math.sin(T.yaw) * 0.15 * dt;
+    T.pos.y = WATER_Y - 0.045;
+    g.position.copy(T.pos); g.rotation.set(0, T.yaw, 0.05);
+    legs(0.5, 5);
+    if (to.length() < 0.12) { T.state = 'climb'; T.t = 0; T.from = T.pos.clone(); }
+  } else if (T.state === 'climb') {
+    const t = Math.min(T.t / 2.2, 1);
+    T.pos.lerpVectors(T.from, T.home, smootherstep(0, 1, t));
+    const want = Math.atan2(-(T.home.z - T.from.z), T.home.x - T.from.x);
+    T.yaw += clamp(wrapAngle(want - T.yaw), -2 * dt, 2 * dt);
+    g.position.copy(T.pos); g.rotation.set(0, T.yaw, 0.35 * Math.sin(t * Math.PI));
+    legs(0.35, 3);
+    if (t >= 1) { T.state = 'bask'; T.timer = 70 + Math.random() * 80; T.yaw = 0.6 + (Math.random() - 0.5) * 0.6; }
+  }
+  const inWater = T.state === 'swim' || T.state === 'return';
+  T.obstacle.x = T.pos.x; T.obstacle.z = T.pos.z; T.obstacle.top = inWater ? 0.1 : -9; T.obstacle.bottom = inWater ? -0.3 : -9;
+}
+function pickTurtleTarget() {
+  for (let k = 0; k < 40; k++) {
+    const x = TURTLE.pos.x + (Math.random() - 0.5) * 4, z = TURTLE.pos.z + (Math.random() - 0.5) * 4;
+    if (pondSDF(x, z) < -0.6) { TURTLE.target.set(x, 0, z); return; }
+  }
+  TURTLE.target.copy(TURTLE.home);
+}
+// ---------- dragonflies: shiokara-tombo (blue) and aki-akane (red) ----------
+const DRAGONFLIES = [];
+function makeWingTexture() {
+  const W = 256, H = 64, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(220,230,240,0.22)';
+  ctx.beginPath(); ctx.moveTo(0, H * 0.4); ctx.bezierCurveTo(W * 0.3, 0, W * 0.8, 2, W, H * 0.3); ctx.bezierCurveTo(W * 0.95, H * 0.8, W * 0.3, H, 0, H * 0.62); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(40,40,40,0.55)'; ctx.lineWidth = 1;
+  for (let k = 0; k < 7; k++) { ctx.beginPath(); ctx.moveTo(0, H * (0.42 + k * 0.03)); ctx.bezierCurveTo(W * 0.3, H * (0.1 + k * 0.1), W * 0.7, H * (0.12 + k * 0.1), W, H * (0.3 + k * 0.05)); ctx.stroke(); }
+  for (let k = 0; k < 40; k++) { const x = (k / 40) * W; ctx.beginPath(); ctx.moveTo(x, H * 0.12); ctx.lineTo(x + 3, H * 0.9); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(30,20,10,0.9)'; ctx.fillRect(W * 0.86, H * 0.2, W * 0.07, H * 0.12);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  TEX.wing = t;
+}
+function buildDragonflies() {
+  makeWingTexture();
+  const wingMat = new THREE.MeshStandardMaterial({ map: TEX.wing, transparent: true, depthWrite: false, side: THREE.DoubleSide, roughness: 0.15, metalness: 0.3, envMapIntensity: 1.2 });
+  patchMaterial(wingMat, { key: 'wing', noWeather: true, defines: { KEEP_ALPHA: '' } });
+  const kinds = [
+    { thorax: [0.08, 0.09, 0.1], abdomen: [0.45, 0.55, 0.68], tip: [0.02, 0.02, 0.02], eye: [0.2, 0.3, 0.45] },
+    { thorax: [0.45, 0.12, 0.05], abdomen: [0.72, 0.1, 0.04], tip: [0.3, 0.05, 0.02], eye: [0.5, 0.12, 0.08] },
+  ];
+  for (let d = 0; d < 5; d++) {
+    const k = kinds[d % 2];
+    const parts = [];
+    parts.push(blobGeom(0.012, 0.007, 0.0065, 10, () => k.thorax));
+    const abd = blobGeom(0.024, 0.0026, 0.0026, 10, (x) => (x < -0.02 ? k.tip : k.abdomen)); abd.translate(-0.034, 0, 0); parts.push(abd);
+    for (const s of [1, -1]) { const e = blobGeom(0.0055, 0.0055, 0.0055, 10, () => k.eye); e.translate(0.013, 0.002, s * 0.004); parts.push(e); }
+    const body = colourMesh(parts, wetSkin('dragonfly', 0.8));
+    const g = new THREE.Group(); g.add(body);
+    const wings = [];
+    for (const [ox, s, len] of [[0.004, 1, 0.034], [0.004, -1, 0.034], [-0.004, 1, 0.031], [-0.004, -1, 0.031]]) {
+      const wg = new THREE.PlaneGeometry(len, len * 0.24); wg.translate(len / 2, 0, 0); wg.rotateX(-Math.PI / 2);
+      const w = new THREE.Mesh(wg, wingMat);
+      const piv = new THREE.Group(); piv.position.set(ox, 0.005, 0); piv.rotation.y = s > 0 ? -Math.PI / 2 : Math.PI / 2;
+      piv.add(w); piv.userData.s = s; g.add(piv); wings.push(piv);
+    }
+    setLayer(g, LAYER.ABOVE);
+    scene.add(g);
+    const home = shorePoint(Math.random(), -0.6 - Math.random());
+    DRAGONFLIES.push({ g, wings, red: d % 2 === 1, pos: new THREE.Vector3(home[0], 0.6, home[1]), vel: new THREE.Vector3(), target: new THREE.Vector3(home[0], 0.5, home[1]), mode: 'hover', t: Math.random() * 3, yaw: 0, perch: null });
+  }
+}
+function dragonflyTarget(df) {
+  if (Math.random() < 0.3) {
+    // perch on something: iris tips, lantern roofs, lotus buds, the bridge rail
+    const perches = [[-1.95, 1.83, 6.05], [-6.4, 1.06, 0.95], [BRIDGE.cx, BRIDGE.base + BRIDGE.rise + 0.86, BRIDGE.cz]];
+    const p = perches[Math.floor(Math.random() * perches.length)];
+    df.target.set(p[0], p[1] + 0.01, p[2]); df.perchNext = true; return;
+  }
+  const q = shorePoint(Math.random(), -0.3 - Math.random() * 2.5);
+  df.target.set(q[0], WATER_Y + 0.25 + Math.random() * 0.8, q[1]); df.perchNext = false;
+}
+function updateDragonflies(dt) {
+  const autumnRed = env.autumn;
+  for (const df of DRAGONFLIES) {
+    df.g.visible = env.snow < 0.5 && env.rain < 0.6 && (df.red ? autumnRed > 0.2 || DRAGONFLIES.indexOf(df) < 4 : true);
+    if (!df.g.visible) continue;
+    df.t -= dt;
+    const to = new THREE.Vector3().subVectors(df.target, df.pos);
+    const d = to.length();
+    if (df.mode === 'hover') {
+      df.vel.multiplyScalar(Math.exp(-6 * dt));
+      df.vel.x += Math.sin(clock.t * 7 + df.yaw) * 0.08 * dt * 10; df.vel.y += Math.cos(clock.t * 5.3) * 0.05 * dt * 10;
+      if (df.t < 0) { dragonflyTarget(df); df.mode = 'dart'; }
+    } else if (df.mode === 'dart') {
+      const acc = to.clone().normalize().multiplyScalar(14);
+      df.vel.addScaledVector(acc, dt);
+      const sp = df.vel.length(), max = 3.2;
+      if (sp > max) df.vel.multiplyScalar(max / sp);
+      if (d < 0.25) df.vel.multiplyScalar(Math.exp(-10 * dt));
+      if (d < 0.05) { df.mode = df.perchNext ? 'perch' : 'hover'; df.t = df.perchNext ? 3 + Math.random() * 6 : 0.8 + Math.random() * 2.5; df.vel.set(0, 0, 0); }
+      df.yaw = Math.atan2(-df.vel.z, df.vel.x);
+    } else if (df.mode === 'perch') {
+      df.vel.set(0, 0, 0); df.pos.copy(df.target);
+      if (df.t < 0) { dragonflyTarget(df); df.mode = 'dart'; }
+    }
+    df.pos.addScaledVector(df.vel, dt);
+    df.g.position.copy(df.pos);
+    df.g.rotation.set(0, df.yaw, clamp(-df.vel.y * 0.3, -0.4, 0.4));
+    const flap = df.mode === 'perch' ? 0 : Math.sin(clock.t * 2 * Math.PI * 22 + (df.red ? 1 : 0)) * 0.7;
+    df.wings.forEach((w, i) => { w.rotation.x = w.userData.s * (flap * (i < 2 ? 1 : -1) + (df.mode === 'perch' ? 0.05 : 0.1)); });
+    if (window.AUDIO && df.mode !== 'perch') AUDIO.buzzNear(df.pos, df.vel.length());
+  }
+}
+// ---------- underwater weed: swaying strands in the shallows ----------
+function buildWeed() {
+  const S = 128, cv = document.createElement('canvas'); cv.width = S; cv.height = S * 4;
+  const ctx = cv.getContext('2d');
+  ctx.strokeStyle = '#2f5a1e'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(64, 512); ctx.bezierCurveTo(50, 360, 80, 160, 60, 0); ctx.stroke();
+  for (let y = 20; y < 500; y += 22) for (let k = 0; k < 4; k++) {
+    const a = (k / 4) * Math.PI * 2 + y * 0.1, L = 26 + (500 - y) * 0.03;
+    ctx.strokeStyle = `hsl(${95 + (k * 7) % 20},45%,${22 + (y % 30) * 0.3}%)`; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(64 + (y % 40) * 0.1 - 2, y); ctx.lineTo(64 + Math.cos(a) * L, y - 6 + Math.sin(a) * 4); ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  const R = mulberry32(606);
+  const quads = [];
+  for (let k = 0; k < 900 && quads.length < 560; k++) {
+    const q = shorePoint(R(), -0.35 - R() * 1.2);
+    const fl = floorHeight(q[0], q[1]);
+    if (fl > -0.25 || fl < -0.95) continue;
+    const h = Math.min(0.2 + R() * 0.35, -fl - 0.1);
+    for (let c = 0; c < 2; c++) {
+      const g = new THREE.PlaneGeometry(0.09, h, 1, 4);
+      g.translate(0, h / 2, 0); g.rotateY(R() * 3 + c * Math.PI / 2);
+      g.translate(q[0] + (R() - 0.5) * 0.2, fl - 0.02, q[1] + (R() - 0.5) * 0.2);
+      fillAttr(g, 'aWind', 4, (x, y) => [0, 0, R(), clamp((y - fl) / h, 0, 1) * 1.4]);
+      quads.push(g);
+    }
+  }
+  const m = new THREE.Mesh(mergeGeoms(quads.map((g) => keepAttrs(g, ['position', 'normal', 'uv', 'aWind']))),
+    patchMaterial(new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.7 }), { wind: true, leaf: true, key: 'weed', noWeather: true }));
+  m.layers.set(LAYER.UNDER); m.receiveShadow = true;
+  scene.add(m);
+}
+// ---------- bubbles ----------
+const BUBBLES = { list: [], mesh: null, max: 220 };
+function buildBubbles() {
+  const g = new THREE.SphereGeometry(1, 10, 8);
+  const m = patchMaterial(new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0, transmission: 0, clearcoat: 1, transparent: true, opacity: 0.55, envMapIntensity: 2.2 }), { key: 'bubble', noWeather: true, defines: { KEEP_ALPHA: '' } });
+  BUBBLES.mesh = new THREE.InstancedMesh(g, m, BUBBLES.max);
+  BUBBLES.mesh.count = 0; BUBBLES.mesh.frustumCulled = false; BUBBLES.mesh.layers.set(LAYER.UNDER);
+  BUBBLES.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(BUBBLES.mesh);
+}
+function emitBubbles(x, y, z, n, r = 0.004) {
+  for (let i = 0; i < n && BUBBLES.list.length < BUBBLES.max; i++) BUBBLES.list.push({ x: x + (Math.random() - 0.5) * 0.03, y, z: z + (Math.random() - 0.5) * 0.03, r: r * (0.5 + Math.random()), ph: Math.random() * 6, vy: 0.12 + Math.random() * 0.1 });
+}
+const _bm = new THREE.Matrix4();
+function updateBubbles(dt) {
+  if (!BUBBLES.mesh) return;
+  // entrained air under the waterfall and the odd bubble from the mud
+  if (Math.random() < dt * 8) emitBubbles(FALLS.lip.x + (Math.random() - 0.5) * 0.3, WATER_Y - 0.1 - Math.random() * 0.2, FALLS.lip.z + FALLS.reach + (Math.random() - 0.5) * 0.2, 1, 0.005);
+  let n = 0;
+  for (let i = BUBBLES.list.length - 1; i >= 0; i--) {
+    const b = BUBBLES.list[i];
+    b.ph += dt * 9;
+    b.vy = Math.min(b.vy + dt * 0.4, 0.28);
+    b.y += b.vy * dt; b.x += Math.sin(b.ph) * 0.02 * dt; b.z += Math.cos(b.ph * 1.3) * 0.02 * dt;
+    if (b.y > WATER_Y - 0.004) { BUBBLES.list.splice(i, 1); addDrop(b.x, b.z, 0.015, 0.0004); continue; }
+    _bm.makeScale(b.r, b.r * (0.85 + 0.15 * Math.sin(b.ph)), b.r); _bm.setPosition(b.x, b.y, b.z);
+    BUBBLES.mesh.setMatrixAt(n++, _bm);
+  }
+  BUBBLES.mesh.count = n; BUBBLES.mesh.instanceMatrix.needsUpdate = true;
+}
+function buildPondLife() { buildFrog(); buildTurtle(); buildDragonflies(); buildWeed(); buildBubbles(); }
+function updatePondLife(dt) { updateFrog(dt); updateTurtle(dt); updateDragonflies(dt); updateBubbles(dt); }
+
 function buildTrees() {
   makeFoliageAtlas();
   for (const k of ['cherry', 'pine', 'maple', 'broad']) makeBarkTexture(k);
@@ -4475,7 +4885,11 @@ const koiCtl = { pose: false, attract: null, inspect: false, activity: 1 };
 function chooseKoiMode(f) {
   const act = env.koi;
   const r = Math.random();
-  if (f.mode === 'hover' || f.mode === 'glide') { f.mode = 'beat'; f.beats = 0; f.beatN = 2 + Math.floor(Math.random() * 3); f.thrust = (0.35 + 0.4 * Math.random()) * (0.45 + 0.55 * act); f.modeT = 6; return; }
+  if (f.mode === 'hover' || f.mode === 'glide') {
+    f.mode = 'beat'; f.beats = 0; f.beatN = 2 + Math.floor(Math.random() * 3); f.thrust = (0.35 + 0.4 * Math.random()) * (0.45 + 0.55 * act); f.modeT = 6;
+    if (f.thrust > 0.62 && Math.random() < 0.5 && typeof emitBubbles === 'function') emitBubbles(f.pos.x + Math.cos(f.heading) * f.size * 0.25, f.pos.y, f.pos.z - Math.sin(f.heading) * f.size * 0.25, 2 + Math.floor(Math.random() * 3), 0.003);
+    return;
+  }
   if (f.mode === 'beat') {
     if (r < 0.06 * act + 0.04) { f.mode = 'hover'; f.modeT = 2.5 + Math.random() * 4.5; f.thrust = 0.03; return; }
     f.mode = 'glide'; f.modeT = (0.9 + Math.random() * 1.8) / (0.6 + 0.4 * act); f.thrust = 0; return;
@@ -4889,6 +5303,7 @@ function step(dt, realDt = dt) {
   updateKoi(P.freeze ? 0 : dt);
   updatePads(P.freeze ? 0 : dt);
   updateFalling(P.freeze ? 0 : dt);
+  updatePondLife(P.freeze ? 0 : dt);
   renderFrame();
   const ms = performance.now() - t0;
   perf.acc += realDt; perf.n++;
@@ -4957,6 +5372,8 @@ const KOI = {
     }
     return m;
   },
+  frogLeap: () => frogLeap(),
+  turtle: (state) => { if (state) { TURTLE.state = state; TURTLE.t = 0; TURTLE.timer = 0; } return TURTLE.state; },
   koiVisible(v) { koiBody.visible = koiFins.visible = koiEyes.visible = v; },
   // advance the simulation without rendering (for tests on software GL)
   simulate(seconds, dt = 1 / 30) {
@@ -4980,6 +5397,7 @@ async function init() {
     ['Bridge & pavilion', () => { buildBridge(); buildPavilion(); buildPier(); buildMountains(); }],
     ['Trees & bamboo', buildTrees],
     ['Water plants', () => { buildWaterPlants(); buildFalling(); }],
+    ['Pond life', buildPondLife],
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['Koi', buildKoi],
