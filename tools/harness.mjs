@@ -49,7 +49,9 @@ export async function open({ width = 1280, height = 720, dpr = 1, query = '', he
   const url = 'file://' + path.join(ROOT, 'koi-pond.html') + '?test' + (query ? '&' + query : '');
   const t0 = Date.now();
   await page.goto(url);
-  await page.waitForFunction(() => window.KOI && window.KOI.ready === true, null, { timeout: 600000 });
+  // fail fast when the script throws while loading
+  const died = new Promise((_, rej) => page.on('pageerror', (e) => rej(new Error('page error while loading: ' + (e && e.message || e)))));
+  await Promise.race([page.waitForFunction(() => window.KOI && window.KOI.ready === true, null, { timeout: 600000 }), died]);
   const loadMs = Date.now() - t0;
   return {
     browser, page, log, loadMs,
