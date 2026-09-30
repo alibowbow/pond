@@ -583,7 +583,7 @@ function makeKoiScaleTexture() {
     const along = best.dx;
     let h = 0.18 + 0.82 * smoothstep(-0.34, 0.68, along + Math.max(best.dy, 0) * 0.35);
     h *= 1 - 0.75 * smoothstep(0.64, 0.78, best.d);
-    h += 0.018 * Math.sin(best.d * 46);
+    h += 0.007 * Math.sin(best.d * 46);   // faint growth rings
     hf[y * N + x] = h;
     const wc = ((best.c % C) + C) % C, wr = ((best.r % R) + R) % R;
     idA[y * N + x] = Math.round(((wr * C + wc + 0.5) / (C * R)) * 255);
@@ -932,7 +932,11 @@ function flatGeom(g) { const n = g.index ? g.toNonIndexed() : g; n.computeVertex
 let renderer, scene, camera, gl, isWebGL2 = true;
 let W = 1, H = 1, DPR = 1, resScale = 1;
 const RT = {};                       // render targets
-const QUALITY = { High: { msaa: 4, shadow: 4096 }, Low: { msaa: 2, shadow: 2048 } };
+// Low renders at 1x (not up to 1.6x), with half-res refraction, quarter-res reflection, no SSAO and slower shadow updates
+const QUALITY = {
+  High: { msaa: 4, shadow: 4096, pr: 2, refr: 1, refrMsaa: 2, refl: 0.5, ao: true, shadowEvery: 2 },
+  Low: { msaa: 2, shadow: 2048, pr: 1, refr: 0.5, refrMsaa: 0, refl: 0.25, ao: false, shadowEvery: 4 },
+};
 let sunLight, hemiLight, skyMesh, envSkyMesh, envScene, pmrem, envRT = null;
 const env = {                        // live (blended) environment state
   tod: 10.5, cloud: 0.55, turbidity: 2, overcast: 0, sunMul: 1, hemiMul: 1, fog: 0.004, fogColor: new THREE.Color(0.5, 0.58, 0.68),
@@ -4210,9 +4214,11 @@ function setLayers(cam, list) { cam.layers.set(0); for (const l of list) cam.lay
 function allocWaterTargets(w, h) {
   if (RT.refl) RT.refl.dispose();
   if (RT.refr) { RT.refr.dispose(); RT.refr.depthTexture.dispose(); }
-  RT.refl = new THREE.WebGLRenderTarget(Math.max(1, w >> 1), Math.max(1, h >> 1), { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
-  const dt = new THREE.DepthTexture(w, h); dt.type = THREE.UnsignedIntType;
-  RT.refr = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: 2, depthTexture: dt, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  const Q = QUALITY[P.quality];
+  RT.refl = new THREE.WebGLRenderTarget(Math.max(1, Math.round(w * Q.refl)), Math.max(1, Math.round(h * Q.refl)), { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
+  const rw = Math.max(1, Math.round(w * Q.refr)), rh = Math.max(1, Math.round(h * Q.refr));
+  const dt = new THREE.DepthTexture(rw, rh); dt.type = THREE.UnsignedIntType;
+  RT.refr = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType, samples: Q.refrMsaa, depthTexture: dt, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
   if (waterMat) { waterMat.uniforms.uRes.value.set(w, h); waterMat.uniforms.uRingR.value = 7 / Math.max(w, 1); }
 }
 const _wp = { above: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), below: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0) };
@@ -4731,24 +4737,43 @@ const GLSL_KOI_ALBEDO = /* glsl */`
   kScUV = vec2(ks * ${KOI_SC.U}, kth * ${KOI_SC.V}.0);
   kSc = texture2D(tKoiScale, kScUV);
   kScaleOn = smoothstep(0.215, 0.26, ks) * (1.0 - kDoitsu) * step(part, 0.5);
-  // owning scale -> its centre in body coordinates (kiwa quantisation)
-  float idx = floor(texelFetch(tKoiScale, ivec2(fract(kScUV) * 512.0), 0).b * ${KOI_SC.C * KOI_SC.R}.0);
-  float colI = mod(idx, ${KOI_SC.C}.0), rowI = floor(idx / ${KOI_SC.C}.0);
-  vec2 cf = vec2((colI + 0.5) / ${KOI_SC.C}.0, (rowI + 0.5 + 0.5 * mod(colI, 2.0)) / ${KOI_SC.R}.0);
-  vec2 dd = cf - fract(kScUV); dd -= floor(dd + 0.5);
-  vec2 centre = kScUV + dd;
-  vec2 cst = vec2(centre.x / ${KOI_SC.U}, fract(centre.y / ${KOI_SC.V}.0));
-  vec2 cid = floor(centre * vec2(${KOI_SC.C}.0, ${KOI_SC.R}.0) + 0.5);
+  // owning scale, found analytically with the scale texture's rule (anterior scales lie on top, then the
+  // dorsal neighbour) so kiwa edges resolve per pixel; the top scale's rim is anti-aliased over the one beneath
+  vec2 g = kScUV * vec2(${KOI_SC.C}.0, ${KOI_SC.R}.0);
+  float aa = max(length(min(fwidth(g), vec2(0.5))) * 0.75, 1e-4);
+  float ci = floor(g.x);
+  vec2 c1 = vec2(ci + 0.5, floor(g.y) + 0.5), c2 = c1;
+  float k1 = 1e9, k2 = 1e9, d1 = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    float c = ci + float(i);
+    float off = mod(c, 2.0) > 0.5 ? 0.5 : 0.0;
+    float ri = floor(g.y - off);
+    for (int j = -1; j <= 1; j++) {
+      vec2 ctr = vec2(c + 0.5, ri + float(j) + 0.5 + off);
+      vec2 q = g - ctr;
+      float d = length(vec2(q.x, q.y * 1.05));
+      if (d > 0.78 + aa) continue;
+      float key = c * 64.0 + ctr.y;
+      if (key < k1) { if (d1 <= 0.78) { k2 = k1; c2 = c1; } k1 = key; c1 = ctr; d1 = d; }
+      else if (key < k2 && d <= 0.78) { k2 = key; c2 = ctr; }
+    }
+  }
+  if (k2 > 1e8) c2 = c1;
+  float cov1 = k1 > 1e8 ? 1.0 : smoothstep(0.78 + aa, 0.78 - aa, d1);
+  vec2 cst = vec2(c1.x / ${(KOI_SC.C * KOI_SC.U).toFixed(1)}, fract(c1.y / ${KOI_SC.R * KOI_SC.V}.0));
+  vec2 cst2 = vec2(c2.x / ${(KOI_SC.C * KOI_SC.U).toFixed(1)}, fract(c2.y / ${KOI_SC.R * KOI_SC.V}.0));
+  vec2 cid = floor(c1 + 0.5);
   float sr = hsh12(cid + vFishId * 7.13);
   vec4 pc = texture2D(tKoiPat, kAtlas(vec2(ks, kth)));
-  vec4 pq = texture2D(tKoiPat, kAtlas(cst));
+  vec4 pq = texture2D(tKoiPat, kAtlas(cst)), pq2 = texture2D(tKoiPat, kAtlas(cst2));
+  float qHi = mix(step(0.5, pq2.r), step(0.5, pq.r), cov1), qSumi = mix(step(0.5, pq2.g), step(0.5, pq.g), cov1);
   float dRds = texture2D(tKoiPat, kAtlas(vec2(ks + 0.012, kth))).r - texture2D(tKoiPat, kAtlas(vec2(ks - 0.012, kth))).r;
   float front = smoothstep(0.0, 0.3, dRds) * kScaleOn;
-  float hiK = mix(smoothstep(0.44, 0.56, pc.r), step(0.5, pq.r), kScaleOn);   // kiwa: crisp, scale by scale
+  float hiK = mix(smoothstep(0.44, 0.56, pc.r), qHi, kScaleOn);   // kiwa: crisp, scale by scale
   float hiS = smoothstep(0.2, 0.8, pc.r);                                     // sashi: soft, seen through scales
   float hi = mix(hiK, hiS, front);
   float sumiC = smoothstep(0.38, 0.62, pc.g);
-  float sumiQ = mix(sumiC, mix(sumiC, step(0.5, pq.g), 0.3) * (0.9 + 0.1 * sr), kScaleOn);
+  float sumiQ = mix(sumiC, mix(sumiC, qSumi, 0.3), kScaleOn);
   float dors = cos(kth * 6.2831853);
   vec3 col = pal0.rgb * (0.9 + 0.2 * (pc.b - 0.5));
   col = mix(col, pal3.rgb, pc.a);
@@ -4756,7 +4781,7 @@ const GLSL_KOI_ALBEDO = /* glsl */`
   col = mix(col, col * vec3(0.88, 0.94, 1.07), white * (1.0 - kSc.a) * 0.5 * kScaleOn);   // faint blue scale pockets
   col = mix(col, pal1.rgb * (0.97 + 0.05 * sr), hi);
   col = mix(col, mix(pal0.rgb, pal1.rgb, 0.5) * vec3(1.0, 0.92, 0.92), front * smoothstep(0.08, 0.45, pc.r) * (1.0 - hi) * 0.55);
-  col = mix(col, pal2.rgb * (1.0 + 0.8 * kSc.a * kScaleOn), sumiQ);
+  col = mix(col, pal2.rgb * (0.8 + 0.4 * sr * kScaleOn + 0.8 * kSc.a * kScaleOn), sumiQ);   // scale-to-scale variation darkens the ink, never greys it
   float ret = flags.z;
   float rim = kSc.a * kScaleOn;
   if (ret > 0.5) {
@@ -5681,7 +5706,7 @@ function renderPost(dt) {
   fsPass(M.focus, nextF);
   POST.focusIdx = 1 - POST.focusIdx;
   // SSAO (half res) + bilateral blur
-  const aoOn = P.ssao > 0.01 && !under;
+  const aoOn = P.ssao > 0.01 && !under && QUALITY[P.quality].ao;
   if (aoOn) {
     setDepthUniforms(M.ssao);
     M.ssao.uniforms.uProj.value.copy(camera.projectionMatrix);
@@ -5768,7 +5793,8 @@ function buildPost() {
   allocTargets();
 }
 function allocTargets() {
-  const w = Math.max(1, Math.round(W * DPR * resScale)), h = Math.max(1, Math.round(H * DPR * resScale));
+  const pr = Math.min(DPR, QUALITY[P.quality].pr);
+  const w = Math.max(1, Math.round(W * pr * resScale)), h = Math.max(1, Math.round(H * pr * resScale));
   const msaa = QUALITY[P.quality].msaa;
   if (RT.main) { RT.main.dispose(); RT.main.depthTexture.dispose(); }
   const dt = new THREE.DepthTexture(w, h);
@@ -7802,9 +7828,9 @@ function setWeather(name, instant = false) {
 }
 function blendWeather(dt) {
   const w = WEATHER[P.weather];
-  const k = 1 - Math.exp(-dt / 2.2);
+  const k = 1 - Math.exp(-dt / 2.2), kSlow = 1 - Math.exp(-dt / 4.4);   // cover, ice and wetness settle at half speed
   for (const key of ['cloud', 'turbidity', 'overcast', 'sunMul', 'hemiMul', 'fog', 'rain', 'wet', 'snow', 'snowCover', 'ice', 'autumn', 'exposure', 'koi']) {
-    const rate = key === 'snowCover' || key === 'ice' || key === 'wet' ? k * 0.5 : k;
+    const rate = key === 'snowCover' || key === 'ice' || key === 'wet' ? kSlow : k;
     env[key] = lerp(env[key], w[key], rate);
   }
   env.fogColor.lerp(_tmpC.setRGB(w.fogColor[0], w.fogColor[1], w.fogColor[2]), k);
@@ -7885,10 +7911,10 @@ function autoQuality(realDt) {
   if (now - QA.lastAlloc < 1200) return;
   if (QA.slowT > 0.8) {
     if (resScale > 0.62) { resScale = Math.max(0.6, resScale - 0.1); QA.lastAlloc = now; QA.slowT = 0; allocTargets(); }
-    else if (P.quality === 'High') { QA.lastAlloc = now; QA.slowT = 0; setQuality('Low'); toast('Quality — Low'); }
+    else if (P.quality === 'High') { QA.lastAlloc = now; QA.slowT = 0; resScale = 1; setQuality('Low'); toast('Quality — Low'); }   // Low already renders at 1x
   } else if (QA.fastT > 3) {
     if (resScale < 0.99) { resScale = Math.min(1, resScale + 0.1); QA.lastAlloc = now; QA.fastT = 0; allocTargets(); }
-    else if (P.quality === 'Low' && QA.fastT > 6) { QA.lastAlloc = now; QA.fastT = 0; setQuality('High'); }
+    else if (P.quality === 'Low' && QA.fastT > 6) { QA.lastAlloc = now; QA.fastT = 0; resScale = 0.7; setQuality('High'); }   // step back up gently
   }
 }
 
@@ -8114,8 +8140,8 @@ function toast(msg) {
 }
 
 function updateShadows() {
-  // shadow map every other frame, rendered through a camera that sees every layer
-  if (clock.frame % 2 === 0 || clock.frame < 3) {
+  // shadow map every other frame (every fourth on Low), rendered through a camera that sees every layer
+  if (clock.frame % QUALITY[P.quality].shadowEvery === 0 || clock.frame < 3) {
     renderer.shadowMap.needsUpdate = true;
     renderer.setRenderTarget(RT.dummy);
     renderer.render(scene, shadowCam);
@@ -8179,8 +8205,10 @@ function step(dt, realDt = dt) {
   updateSplash(P.freeze ? 0 : dt);
   updateInteractions(P.freeze ? 0 : dt);
   AUDIO.update(realDt, FEED.excite);
+  const t1 = performance.now();
   renderFrame();
   const ms = performance.now() - t0;
+  perf.simMs = t1 - t0;   // simulation only; the rest is render submission
   perf.acc += realDt; perf.n++;
   if (perf.acc > 0.5) {
     perf.fps = perf.n / perf.acc; perf.ms = (perf.acc / perf.n) * 1000; perf.acc = 0; perf.n = 0;
