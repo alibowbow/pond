@@ -197,7 +197,7 @@ body.test #toast { display: none; }
     <li><span class="k"><kbd>H</kbd></span>Settings panel</li>
     <li><span class="k"><kbd>I</kbd></span>This guide</li>
   </ul>
-  <div class="gf"><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
+  <div class="gf">Drag or press a move key in any mode to take the camera.<br><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>&larr;</b>/<b>&rarr;</b> turn, <b>&uarr;</b>/<b>&darr;</b> forward/back, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed. Touch: one finger looks, two fingers slide, pinch to go forward.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
 </div>
 <button id="gOpen" class="hidden" aria-label="Show guide (I)" title="Show guide (I)">?</button>
 <div id="dock" class="glass" role="toolbar" aria-label="Controls">
@@ -5823,20 +5823,79 @@ function applyCamRotation() {
   camera.rotation.set(camState.pitch, camState.yaw, 0, 'YXZ');
   camera.updateMatrixWorld();
 }
+// keys that fly the manual camera; pressing one (or dragging) in another mode takes the camera over
+const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const _te = new THREE.Euler();
+function takeManual() {
+  if (CAM.mode === 'Manual' || STROKE.on || CAMX.on) return CAM.mode === 'Manual';
+  _te.setFromQuaternion(camera.quaternion, 'YXZ');      // carry on from exactly where the shot was looking
+  camState.yaw = _te.y; camState.pitch = clamp(_te.x, -1.5, 1.5);
+  setCamMode('Manual'); P.tour = false;
+  if (window.GUI_REFRESH) GUI_REFRESH();
+  return true;
+}
 function setupInput() {
   const el = renderer.domElement;
-  el.addEventListener('pointerdown', (e) => { camState.drag = true; camState.lx = e.clientX; camState.ly = e.clientY; el.setPointerCapture(e.pointerId); });
-  el.addEventListener('pointerup', (e) => { camState.drag = false; });
+  const pts = new Map();            // active pointers (touch: one finger looks, two fingers move)
+  let pinch = null, downAt = null;
+  const typing = (e) => e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+  el.addEventListener('pointerdown', (e) => {
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+    if (pts.size === 1) { camState.drag = true; camState.lx = e.clientX; camState.ly = e.clientY; downAt = { x: e.clientX, y: e.clientY }; }
+    else { camState.drag = false; camState.multiT = performance.now(); pinch = null; }
+  });
+  const up = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 1) { const p = pts.values().next().value; camState.drag = true; camState.lx = p.x; camState.ly = p.y; downAt = null; }
+    if (!pts.size) camState.drag = false;
+  };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
   el.addEventListener('pointermove', (e) => {
-    if (!camState.drag) return;
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    p.x = e.clientX; p.y = e.clientY;
     if (STROKE.on) { camState.lx = e.clientX; camState.ly = e.clientY; return; }
+    if (pts.size >= 2) {
+      // two fingers: pinch to go forward/back, drag to slide sideways and up/down
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (pinch && takeManual()) {
+        const k = camState.speed * 0.004;
+        const f = _v1.set(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw)), r = _v2.set(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
+        camera.position.addScaledVector(f, (d - pinch.d) * k * 1.5).addScaledVector(r, -(mx - pinch.mx) * k);
+        camera.position.y += (my - pinch.my) * k;
+      }
+      pinch = { d, mx, my };
+      return;
+    }
+    if (!camState.drag) return;
     const dx = e.clientX - camState.lx, dy = e.clientY - camState.ly;
+    // a click on the water or the frog stays a click; a real drag takes the camera
+    if (CAM.mode !== 'Manual') {
+      if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6 || !takeManual()) return;
+    }
     camState.lx = e.clientX; camState.ly = e.clientY;
     camState.yaw -= dx * 0.0032; camState.pitch = clamp(camState.pitch - dy * 0.0032, -1.5, 1.5);
   });
-  el.addEventListener('wheel', (e) => { camState.speed = clamp(camState.speed * Math.pow(1.0015, -e.deltaY), 0.2, 40); e.preventDefault(); }, { passive: false });
-  window.addEventListener('keydown', (e) => { camState.keys.add(e.code); });
+  let speedToastT = 0;
+  el.addEventListener('wheel', (e) => {
+    camState.speed = clamp(camState.speed * Math.pow(1.0015, -e.deltaY), 0.2, 40);
+    e.preventDefault();
+    const now = performance.now();
+    if (now - speedToastT > 250) { speedToastT = now; toast('Move speed ' + camState.speed.toFixed(1) + ' m/s'); }
+  }, { passive: false });
+  window.addEventListener('keydown', (e) => {
+    if (typing(e)) return;
+    if (MOVE_KEYS.has(e.code)) { e.preventDefault(); if (CAM.mode !== 'Manual' && !e.repeat) takeManual(); }
+    camState.keys.add(e.code);
+  });
   window.addEventListener('keyup', (e) => { camState.keys.delete(e.code); });
+  // a key released while the page was in the background must not keep the camera flying
+  window.addEventListener('blur', () => camState.keys.clear());
+  document.addEventListener('visibilitychange', () => { if (document.hidden) camState.keys.clear(); });
   window.addEventListener('resize', resize);
 }
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
@@ -5845,8 +5904,12 @@ function updateManualCamera(dt) {
   const sp = camState.speed * (k.has('ShiftLeft') || k.has('ShiftRight') ? 3 : 1) * dt;
   const f = _v1.set(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw));
   const r = _v2.set(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
-  if (k.has('KeyW')) camera.position.addScaledVector(f, sp);
-  if (k.has('KeyS')) camera.position.addScaledVector(f, -sp);
+  // arrows: up/down move, left/right turn (so the keyboard alone can steer)
+  const turn = (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0);
+  if (turn) camState.yaw += turn * 1.4 * dt * (k.has('ShiftLeft') || k.has('ShiftRight') ? 1.6 : 1);
+  f.set(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw)); r.set(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
+  if (k.has('KeyW') || k.has('ArrowUp')) camera.position.addScaledVector(f, sp);
+  if (k.has('KeyS') || k.has('ArrowDown')) camera.position.addScaledVector(f, -sp);
   if (k.has('KeyA')) camera.position.addScaledVector(r, -sp);
   if (k.has('KeyD')) camera.position.addScaledVector(r, sp);
   if (k.has('KeyQ')) camera.position.y -= sp;
@@ -5944,7 +6007,7 @@ function setCamMode(m) {
   if (m === 'Cinematic') { CAM.t = 0; CAM.lastShot = -1; }
   if (m === 'Follow koi') { CAM.pos.set(0, 0, 0); }
   if (m !== 'Cinematic') { CAM.fade = 0; hideCaption(); }
-  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD to move' : 'Following ' + FISH[CAM.follow].variety);
+  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD or arrows to move' : 'Following ' + FISH[CAM.follow].variety, m === 'Manual' ? 3200 : 2200);
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 function updateCamera(dtReal, dt) {
@@ -8061,7 +8124,7 @@ function setupUI() {
     if (!down) return;
     const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t;
     down = null;
-    if (moved < 6 && dt < 450) handleClick(e.clientX, e.clientY);
+    if (moved < 6 && dt < 450 && !((camState.multiT || 0) > performance.now() - dt - 1)) handleClick(e.clientX, e.clientY);   // not the end of a two-finger gesture
   });
 }
 const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _hit = new THREE.Vector3(), _wplane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -WATER_Y);
