@@ -168,7 +168,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .koi-gui .dg .c input[type=checkbox]:checked { background: var(--accent); border-color: transparent; }
 .koi-gui .dg .c input[type=checkbox]:checked::after { transform: translateX(15px); }
 /* glass dropdowns */
-.koi-gui .dg .c select { appearance: none; -webkit-appearance: none; width: 100%; height: 24px; margin-top: 4px; padding: 0 26px 0 9px; border-radius: 8px; cursor: pointer;
+.koi-gui .dg .c select { appearance: none; -webkit-appearance: none; width: 100%; height: 24px; margin-top: 4px; padding: 0 26px 2px 9px; border-radius: 8px; cursor: pointer;
   color: var(--text); font: 500 12px/22px var(--sans); border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.07) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c8cdd0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center; }
 .koi-gui .dg .c select:hover { background-color: rgba(255, 255, 255, 0.12); }
@@ -2223,11 +2223,11 @@ function boxAt(w, h, d, x, y, z, yaw = 0) {
   g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), new THREE.Vector3(1, 1, 1)));
   return g;
 }
-// hexagonal fire box with window openings on the listed sides
-function fireBox(rc, y0, y1, windows) {
-  const parts = [], side = rc, apo = rc * Math.cos(Math.PI / 6), h = y1 - y0, t = 0.035;
-  for (let k = 0; k < 6; k++) {
-    const a = k * (Math.PI / 3);
+// polygonal fire box (hwasaseok) with window openings on the listed sides; rc is the corner radius
+function fireBox(rc, y0, y1, windows, sides = 6) {
+  const parts = [], side = 2 * rc * Math.sin(Math.PI / sides), apo = rc * Math.cos(Math.PI / sides), h = y1 - y0, t = 0.035;
+  for (let k = 0; k < sides; k++) {
+    const a = k * (2 * Math.PI / sides);
     const cx = Math.cos(a) * (apo - t / 2), cz = Math.sin(a) * (apo - t / 2), yaw = -a + Math.PI / 2;
     const tx = -Math.sin(a), tz = Math.cos(a);
     if (windows.includes(k)) {
@@ -2239,48 +2239,60 @@ function fireBox(rc, y0, y1, windows) {
   }
   return parts;
 }
-function kasugaLantern() {
-  const P6 = (prof, lift) => polyLathe(prof, 6, 4, lift);
+// lotus petals carved round a lathe: ring of `n` petals whose tips push out by `amt` where w(t) says
+const lotusMod = (n, amt, w) => (a, t) => {
+  const ph = fract(a * n / (Math.PI * 2) + 0.5), bump = Math.pow(Math.sin(Math.PI * ph), 0.6);
+  return 1 - amt * (1 - bump) * w(t);
+};
+// Silla-style octagonal stone lantern (palgak seokdeung): plinth, base with downturned lotus (bongnyeon),
+// slender octagonal shaft, upturned lotus (angnyeon) under a fire chamber with four windows,
+// a thin octagonal roof with lifted corners and corner flowers (gwikkot), and a jewel (boju)
+function palgakLantern() {
+  const P8 = (prof, lift) => polyLathe(prof, 8, 3, lift);
   const parts = [
-    P6([[0.0, 0.0], [0.41, 0.0], [0.43, 0.06], [0.4, 0.1], [0.3, 0.15], [0.14, 0.19], [0.0, 0.19]]),
-    roundLathe([[0.0, 0.17], [0.1, 0.17], [0.1, 0.52], [0.128, 0.545], [0.128, 0.585], [0.1, 0.61], [0.1, 0.97], [0.0, 0.97]], 20),
-    P6([[0.0, 0.95], [0.09, 0.95], [0.22, 0.99], [0.31, 1.05], [0.335, 1.1], [0.31, 1.13], [0.0, 1.13]]),
-    ...fireBox(0.21, 1.13, 1.42, [0, 3]),
-    P6([[0.0, 1.415], [0.26, 1.415], [0.27, 1.44], [0.0, 1.44]]),
-    P6([[0.0, 1.43], [0.2, 1.43], [0.5, 1.405], [0.56, 1.425], [0.57, 1.46], [0.52, 1.49], [0.34, 1.54], [0.16, 1.6], [0.06, 1.62], [0.0, 1.625]],
-      (i, c, rc) => 0.06 * Math.pow(c, 5) * smoothstep(0.3, 0.55, rc)),
-    roundLathe([[0.0, 1.61], [0.08, 1.615], [0.1, 1.64], [0.075, 1.66], [0.1, 1.69], [0.105, 1.73], [0.08, 1.78], [0.035, 1.82], [0.0, 1.845]], 16),
+    boxAt(0.78, 0.1, 0.78, 0, 0.05, 0),
+    P8([[0.0, 0.1], [0.4, 0.1], [0.4, 0.17], [0.0, 0.17]]),
+    keepAttrs(latheGeom([[0.0, 0.165], [0.36, 0.165], [0.37, 0.18], [0.34, 0.22], [0.28, 0.27], [0.2, 0.31], [0.13, 0.33], [0.0, 0.33]], 64,
+      lotusMod(8, 0.16, (t) => 1 - smoothstep(0.15, 0.85, t))), ['position', 'normal']),
+    P8([[0.0, 0.32], [0.14, 0.32], [0.14, 0.36], [0.0, 0.36]]),
+    P8([[0.0, 0.35], [0.085, 0.35], [0.085, 0.98], [0.0, 0.98]]),
+    P8([[0.0, 0.97], [0.12, 0.97], [0.12, 1.0], [0.0, 1.0]]),
+    keepAttrs(latheGeom([[0.0, 0.995], [0.13, 0.995], [0.2, 1.02], [0.27, 1.06], [0.31, 1.1], [0.31, 1.12], [0.0, 1.12]], 64,
+      lotusMod(8, 0.16, (t) => smoothstep(0.1, 0.7, t) * (1 - smoothstep(0.75, 1.0, t)))), ['position', 'normal']),
+    P8([[0.0, 1.115], [0.27, 1.115], [0.27, 1.14], [0.0, 1.14]]),
+    ...fireBox(0.175, 1.14, 1.44, [0, 2, 4, 6], 8),
+    P8([[0.0, 1.435], [0.22, 1.435], [0.24, 1.46], [0.0, 1.46]]),
+    // the roof: a thin slab whose eaves lift toward each corner, then a shallow hip to the ridge
+    P8([[0.0, 1.455], [0.3, 1.455], [0.42, 1.47], [0.43, 1.495], [0.36, 1.53], [0.22, 1.585], [0.1, 1.62], [0.0, 1.63]],
+      (i, c, rc) => 0.07 * Math.pow(c, 3) * smoothstep(0.24, 0.43, rc)),
+    P8([[0.0, 1.62], [0.075, 1.62], [0.075, 1.66], [0.0, 1.66]]),
+    roundLathe([[0.0, 1.655], [0.06, 1.66], [0.1, 1.69], [0.105, 1.73], [0.085, 1.77], [0.05, 1.8], [0.02, 1.84], [0.0, 1.87]], 18),
   ];
-  // warabite curls at the roof corners
-  for (let k = 0; k < 6; k++) {
-    const a = (k + 0.5) * (Math.PI / 3), r = 0.565;
-    const cg = keepAttrs(new THREE.SphereGeometry(0.032, 8, 6), ['position', 'normal']);
-    cg.applyMatrix4(new THREE.Matrix4().makeScale(1, 1.3, 1).premultiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 1.5, Math.sin(a) * r)));
+  // corner flowers where the eaves lift
+  for (let k = 0; k < 8; k++) {
+    const a = k * (Math.PI / 4) + Math.PI / 8, r = 0.405;
+    const cg = keepAttrs(new THREE.SphereGeometry(0.022, 8, 6), ['position', 'normal']);
+    cg.applyMatrix4(new THREE.Matrix4().makeScale(0.8, 1.6, 0.8).premultiply(new THREE.Matrix4().makeTranslation(Math.cos(a) * r, 1.545, Math.sin(a) * r)));
     parts.push(cg);
   }
   return mergeGeoms(parts);
 }
-function yukimiLantern() {
-  const P6 = (prof, lift) => polyLathe(prof, 6, 4, lift);
-  const parts = [];
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2 + 0.5;
-    const pts = [];
-    for (let i = 0; i <= 10; i++) {
-      const t = i / 10;
-      const r = lerp(0.46, 0.2, Math.pow(t, 0.7)), y = lerp(-0.08, 0.44, t) + Math.sin(t * Math.PI) * 0.02;
-      pts.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
-    }
-    parts.push(keepAttrs(tubeGeom(pts, (t) => lerp(0.05, 0.04, t), 8), ['position', 'normal']));
-  }
-  parts.push(P6([[0.0, 0.42], [0.3, 0.42], [0.33, 0.46], [0.3, 0.5], [0.0, 0.5]]));
-  parts.push(...fireBox(0.2, 0.5, 0.72, [0, 2, 4]));
-  parts.push(P6([[0.0, 0.715], [0.24, 0.715], [0.25, 0.735], [0.0, 0.735]]));
-  parts.push(P6([[0.0, 0.73], [0.22, 0.73], [0.6, 0.71], [0.66, 0.74], [0.66, 0.78], [0.58, 0.8], [0.36, 0.86], [0.14, 0.93], [0.05, 0.95], [0.0, 0.955]],
-    (i, c, rc) => 0.07 * Math.pow(c, 4) * smoothstep(0.35, 0.62, rc)));
-  parts.push(roundLathe([[0.0, 0.94], [0.06, 0.945], [0.075, 0.98], [0.055, 1.02], [0.02, 1.05], [0.0, 1.06]], 14));
+// a low Goryeo-style square lantern (sagak seokdeung) for the west bank
+function sagakLantern() {
+  const P4 = (prof, lift) => polyLathe(prof, 4, 3, lift);
+  const parts = [
+    P4([[0.0, 0.0], [0.4, 0.0], [0.4, 0.09], [0.31, 0.15], [0.0, 0.15]]),
+    P4([[0.0, 0.14], [0.11, 0.14], [0.1, 0.5], [0.0, 0.5]]),
+    P4([[0.0, 0.49], [0.13, 0.49], [0.26, 0.55], [0.27, 0.58], [0.0, 0.58]]),
+    ...fireBox(0.2, 0.58, 0.8, [0, 2], 4),
+    // a hipped square roof, its corners lifting like the eaves of a hanok
+    P4([[0.0, 0.795], [0.27, 0.795], [0.47, 0.81], [0.48, 0.835], [0.4, 0.865], [0.24, 0.93], [0.1, 0.98], [0.0, 0.99]],
+      (i, c, rc) => 0.08 * Math.pow(c, 3) * smoothstep(0.26, 0.48, rc)),
+    roundLathe([[0.0, 0.98], [0.05, 0.985], [0.08, 1.01], [0.075, 1.05], [0.04, 1.08], [0.0, 1.11]], 16),
+  ];
   return mergeGeoms(parts);
 }
+const LANTERNS = [];   // { x, top, z }: dragonflies perch on the jewels
 
 function buildStones() {
   const U = (scale, moss, lichen) => ({ tRock: { value: TEX.rock }, tRockN: { value: TEX.rockN }, tMossT: { value: TEX.moss }, uTriScale: { value: scale }, uMossAmt: { value: moss }, uLichen: { value: lichen } });
@@ -2363,10 +2375,11 @@ function buildStones() {
     add(g, rockMat, false);
   }
   // --- lanterns ---
-  const kas = placeGeom(kasugaLantern(), -1.95, terrainHeight(-1.95, 6.05) - 0.03, 6.05, 0.35);
-  add(kas, lanternMat, true, true);
-  const yuk = placeGeom(yukimiLantern(), -6.4, terrainHeight(-6.4, 0.95) - 0.02, 0.95, 0.9);
-  add(yuk, lanternMat, true, true);
+  for (const [fn, x, z, yaw] of [[palgakLantern, -1.95, 6.05, 0.35], [sagakLantern, -6.4, 0.95, 0.9]]) {
+    const g = placeGeom(fn(), x, terrainHeight(x, z) - 0.03, z, yaw);
+    add(g, lanternMat, true, true);
+    LANTERNS.push({ x, top: g.boundingBox.max.y, z });
+  }
   // merge per material and layer
   for (const { mat, layer, list } of groups.values()) {
     const m = new THREE.Mesh(mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal']))), mat);
@@ -2410,78 +2423,156 @@ function woodMaterial(tint = 0xffffff, rough = 0.78, age = 1) {
   const m = new THREE.MeshStandardMaterial({ color: tint, map: TEX.wood, normalMap: TEX.woodN, normalScale: new THREE.Vector2(0.6, 0.6), roughness: rough, metalness: 0, envMapIntensity: 0.8 });
   return patchMaterial(m, { wood: true, porosity: 0.9, extraUniforms: { uWoodAge: { value: age } }, key: 'wood' + age });
 }
-// ---------- bridge: arched wooden bridge across the waist of the pond ----------
-const BRIDGE = { a: new THREE.Vector3(2.9, 0, 1.95), b: new THREE.Vector3(2.35, 0, -3.65), width: 1.45, rise: 0.62, base: 0.26 };
+// ---------- bridge: a granite rainbow bridge (hongyegyo) across the waist of the pond ----------
+// one arch of dressed voussoirs springing from the pond floor, ashlar spandrels, slab deck and a stone railing
+const BRIDGE = { a: new THREE.Vector3(2.9, 0, 1.95), b: new THREE.Vector3(2.35, 0, -3.65), width: 1.5, rise: 0.48, base: 0.28 };
 let bridgeDeckY = null;
 function buildBridge() {
-  const woodDeck = woodMaterial(0xcfc3b4, 0.8, 1.0), woodFrame = woodMaterial(0x9a8a78, 0.7, 0.8);
-  const bronze = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x4d5a45, roughness: 0.5, metalness: 0.8, envMapIntensity: 1 }), { key: 'bronze', porosity: 0.2 });
   const span = BRIDGE.a.distanceTo(BRIDGE.b), half = span / 2;
   const yaw = Math.atan2(-(BRIDGE.b.z - BRIDGE.a.z), BRIDGE.b.x - BRIDGE.a.x);
   const cx = (BRIDGE.a.x + BRIDGE.b.x) / 2, cz = (BRIDGE.a.z + BRIDGE.b.z) / 2;
   const deckY = (x) => BRIDGE.base + BRIDGE.rise * Math.pow(Math.max(0, 1 - sq(x / half)), 0.75);
   bridgeDeckY = (wx, wz) => { const lx = (wx - cx) * Math.cos(yaw) - (wz - cz) * Math.sin(yaw); return deckY(lx); };
   BRIDGE.cx = cx; BRIDGE.cz = cz; BRIDGE.yaw = yaw; BRIDGE.half = half;
-  const W = BRIDGE.width;
-  const deck = [], frame = [], piers = [], metal = [];
-  const nPl = Math.floor(span / 0.155);
-  for (let i = 0; i < nPl; i++) {
-    const x = -half + (i + 0.5) * (span / nPl);
-    const y = deckY(x), dy = (deckY(x + 0.01) - deckY(x - 0.01)) / 0.02;
-    const g = plank(W, 0.142, 0.05);
-    g.rotateY(Math.PI / 2);
-    g.rotateZ(Math.atan(dy));
-    g.translate(x, y - 0.025, (hash1(i) - 0.5) * 0.02);
-    deck.push(g);
-  }
-  const curve = (off, yOff, w, h, list, segs = 16) => {
-    for (let i = 0; i < segs; i++) {
-      const x0 = -half + (i / segs) * span, x1 = -half + ((i + 1) / segs) * span;
-      list.push(beamBetween(new THREE.Vector3(x0, deckY(x0) + yOff, off), new THREE.Vector3(x1, deckY(x1) + yOff, off), w, h));
+  const W = BRIDGE.width, hw = W / 2;
+  const toWorld = (lx, lz) => [cx + lx * Math.cos(yaw) + lz * Math.sin(yaw), cz - lx * Math.sin(yaw) + lz * Math.cos(yaw)];
+  const floorAt = (lx) => { let f = 9; for (const lz of [-hw, 0, hw]) { const [wx, wz] = toWorld(lx, lz); f = Math.min(f, terrainHeight(wx, wz)); } return f; };
+  // the arch: a segmental ring whose springings sit on the pond floor and whose crown clears the water by ~0.5 m
+  const chord = 3.5, a0 = chord / 2, spring = Math.min(floorAt(-a0), floorAt(a0)) - 0.04, crown = deckY(0) - 0.36;
+  const hRise = crown - spring, Rr = (a0 * a0 + hRise * hRise) / (2 * hRise), cy = crown - Rr;
+  const intrados = (x) => Math.abs(x) >= a0 ? -9 : cy + Math.sqrt(Math.max(Rr * Rr - x * x, 0));
+  BRIDGE.intrados = intrados;
+  const ring = 0.24, th0 = Math.asin(a0 / Rr);
+  const R = mulberry32(4242);
+  const blocks = [], rings = [], deck = [], rail = [];
+  const block = (list, x0, x1, y0, y1, z0, z1, rough = 0.01) => {
+    const g = keepAttrs(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0, 1, 1, 1), ['position', 'normal']);
+    g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    const pp = g.attributes.position;
+    // corners shared by several faces move together (hash of the corner position), so the block stays closed
+    for (let i = 0; i < pp.count; i++) {
+      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i), h = hash3i(Math.round(x * 997), Math.round(y * 991), Math.round(z * 983), 7);
+      pp.setXYZ(i, x + (fract(h * 13.1) - 0.5) * rough, y + (fract(h * 17.3) - 0.5) * rough, z + (fract(h * 19.7) - 0.5) * rough);
     }
+    g.computeVertexNormals();
+    list.push(g);
   };
+  // closed six-sided block from eight corners (0-3 on one end, 4-7 on the other), faces wound outward, flat shaded
+  const hexa = (v) => {
+    const c = v.reduce((acc, p) => acc.add(p), new THREE.Vector3()).multiplyScalar(1 / 8), pos = [];
+    for (const [i, j, k, l] of [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]) {
+      let q = [v[i], v[j], v[k], v[l]];
+      const n = new THREE.Vector3().subVectors(q[1], q[0]).cross(new THREE.Vector3().subVectors(q[2], q[0]));
+      const m = q[0].clone().add(q[1]).add(q[2]).add(q[3]).multiplyScalar(0.25).sub(c);
+      if (n.dot(m) < 0) q = q.reverse();
+      for (const t of [q[0], q[1], q[2], q[0], q[2], q[3]]) pos.push(t.x, t.y, t.z);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.computeVertexNormals();
+    return g;
+  };
+  const arcPt = (t, r, z) => new THREE.Vector3(Math.sin(t) * r, cy + Math.cos(t) * r, z);
+  const wedge = (t0, t1, r0, r1, z0, z1) => hexa([arcPt(t0, r0, z0), arcPt(t1, r0, z0), arcPt(t1, r1, z0), arcPt(t0, r1, z0),
+    arcPt(t0, r0, z1), arcPt(t1, r0, z1), arcPt(t1, r1, z1), arcPt(t0, r1, z1)]);
+  // voussoirs (hongyeseok) on both faces, standing a little proud of the spandrels, and the barrel stones between them
+  const nv = 17, nc = 7, gap = 0.006 / Rr;
+  for (let i = 0; i < nv; i++) {
+    const t0 = lerp(-th0, th0, i / nv) + gap, t1 = lerp(-th0, th0, (i + 1) / nv) - gap;
+    rings.push(wedge(t0, t1, Rr, Rr + ring, -hw - 0.03, -hw + 0.32));
+    rings.push(wedge(t0, t1, Rr, Rr + ring, hw - 0.32, hw + 0.03));
+    for (let k = 0; k < nc; k++) {
+      const z0 = -hw + 0.32 + (k / nc) * (W - 0.64), z1 = -hw + 0.32 + ((k + 1) / nc) * (W - 0.64);
+      const o = (i + k) % 2 ? 0.5 : 0;   // staggered joints
+      const ta = lerp(-th0, th0, (i + o) / nv), tb = lerp(-th0, th0, Math.min(i + 1 + o, nv) / nv);
+      if (i === nv - 1 && o) continue;
+      rings.push(wedge(Math.max(ta, -th0) + gap, Math.min(tb, th0) - gap, Rr + 0.004, Rr + ring * 0.8, z0 + 0.003, z1 - 0.003));
+      if (i === 0 && o) rings.push(wedge(-th0 + gap, ta - gap, Rr + 0.004, Rr + ring * 0.8, z0 + 0.003, z1 - 0.003));
+    }
+  }
+  // spandrels and abutments: ashlar courses from the ring (or the floor) up to the deck, on both faces
+  const extr = (x) => Math.abs(x) >= a0 ? -9 : cy + Math.sqrt(Math.max(sq(Rr + ring) - x * x, 0));
+  const courseH = 0.2, x0 = -half - 0.15, x1 = half + 0.15;
+  const bottom = (x) => Math.max(extr(x), floorAt(x) - 0.08);
+  let yc = Math.min(floorAt(x0), floorAt(x1), spring) - 0.05, row = 0;
+  while (yc < deckY(0) - 0.12) {
+    const y1 = yc + courseH;
+    let x = x0 + (row % 2) * 0.2;
+    while (x < x1) {
+      const w = 0.36 + R() * 0.22, xa = Math.max(x, x0), xb = Math.min(x + w, x1);
+      // reach down to the lower of the two ends (the overlap hides inside the voussoirs) and up under the deck slabs
+      const top = Math.min(y1, Math.max(deckY(xa), deckY(xb)) - 0.1), bot = Math.max(yc, Math.min(bottom(xa), bottom(xb)));
+      if (top - bot > 0.03 && xb - xa > 0.05) for (const sz of [-1, 1]) block(blocks, xa + 0.004, xb - 0.004, bot + 0.004, top - 0.004, sz > 0 ? hw - 0.3 : -hw, sz > 0 ? hw : -hw + 0.3);
+      x += w;
+    }
+    yc = y1; row++;
+  }
+  // core between the faces (hidden), so the deck never shows daylight from below
+  for (let i = 0; i < 24; i++) {
+    const xa = x0 + (i / 24) * (x1 - x0), xb = x0 + ((i + 1) / 24) * (x1 - x0);
+    const bot = Math.max(Math.min(extr(xa), extr(xb)) - 0.02, Math.min(floorAt(xa), floorAt(xb)) - 0.08), top = Math.max(deckY(xa), deckY(xb)) - 0.1;
+    if (top > bot) block(blocks, xa, xb, bot, top, -hw + 0.28, hw - 0.28, 0);
+  }
+  // deck slabs (cheongpanseok) laid across, following the camber
+  const ns = Math.floor(span / 0.42);
+  for (let i = 0; i < ns; i++) {
+    const xa = -half - 0.15 + (i / ns) * (span + 0.3), xb = -half - 0.15 + ((i + 1) / ns) * (span + 0.3);
+    const ya = deckY(xa), yb = deckY(xb);
+    const g = beamBetween(new THREE.Vector3(xa + 0.006, ya - 0.06, 0), new THREE.Vector3(xb - 0.006, yb - 0.06, 0), W + 0.06, 0.12);
+    deck.push(keepAttrs(g, ['position', 'normal']));
+  }
+  // stone railing: posts with lotus-bud caps, a panel course and a round rail (dollandae) on hayeop props
   for (const side of [-1, 1]) {
-    curve(side * (W / 2 - 0.08), -0.12, 0.12, 0.16, frame);
-    curve(side * (W / 2 + 0.02), 0.78, 0.075, 0.07, frame, 20);
-    curve(side * (W / 2 + 0.02), 0.36, 0.05, 0.045, frame, 20);
-    const nPost = 7;
-    for (let k = 0; k <= nPost; k++) {
-      const x = -half + 0.08 + (k / nPost) * (span - 0.16);
-      const y = deckY(x);
-      frame.push(xform(plank(0.11, 0.11, 0.86), x, y + 0.4, side * (W / 2 + 0.02)));
-      if (k === 0 || k === nPost) {
-        const gb = latheGeom([[0, 0], [0.07, 0], [0.075, 0.03], [0.065, 0.05], [0.085, 0.1], [0.07, 0.15], [0.035, 0.19], [0.012, 0.23], [0, 0.26]], 18);
-        metal.push(xform(gb, x, y + 0.83, side * (W / 2 + 0.02)));
+    const z = side * (hw - 0.07), np = 6;
+    for (let k = 0; k <= np; k++) {
+      const x = -half + 0.12 + (k / np) * (span - 0.24), y = deckY(x);
+      const end = k === 0 || k === np;
+      const ph = end ? 0.74 : 0.6;
+      block(rail, x - 0.075, x + 0.075, y - 0.02, y + ph, z - 0.075, z + 0.075, 0.003);
+      rail.push(roundLathe([[0, 0], [0.07, 0], [0.085, 0.04], [0.07, 0.09], [0.035, 0.13], [0, 0.15]], 12).translate(x, y + ph - 0.01, z));
+      if (k < np) {
+        const xn = -half + 0.12 + ((k + 1) / np) * (span - 0.24);
+        // panel between posts, following the deck
+        const segs = 6;
+        for (let q = 0; q < segs; q++) {
+          const xa = lerp(x + 0.075, xn - 0.075, q / segs), xb = lerp(x + 0.075, xn - 0.075, (q + 1) / segs);
+          const g = beamBetween(new THREE.Vector3(xa, deckY(xa) + 0.17, z), new THREE.Vector3(xb, deckY(xb) + 0.17, z), 0.07, 0.3);
+          rail.push(keepAttrs(g, ['position', 'normal']));
+        }
+        // hayeop props carry the rail above the panel
+        for (const f of [0.33, 0.67]) {
+          const xf = lerp(x, xn, f), yf = deckY(xf);
+          rail.push(roundLathe([[0, 0], [0.05, 0], [0.035, 0.05], [0.03, 0.1], [0.06, 0.16], [0.0, 0.17]], 10).translate(xf, yf + 0.32, z));
+        }
+        const pts = [];
+        for (let q = 0; q <= 10; q++) { const xq = lerp(x, xn, q / 10); pts.push(new THREE.Vector3(xq, deckY(xq) + 0.52, z)); }
+        rail.push(keepAttrs(tubeGeom(pts, () => 0.045, 10), ['position', 'normal']));
       }
     }
   }
-  for (const px of [-half * 0.46, half * 0.46]) {
-    const y = deckY(px);
-    frame.push(xform(plank(0.16, W + 0.25, 0.14), px, y - 0.2, 0));
-    for (const side of [-1, 1]) {
-      const lz = side * (W / 2 - 0.1);
-      const wx = cx + px * Math.cos(yaw) + lz * Math.sin(yaw), wz = cz - px * Math.sin(yaw) + lz * Math.cos(yaw);
-      const fl = terrainHeight(wx, wz) - 0.1;
-      const h = y - 0.2 - fl;
-      piers.push(xform(plank(0.15, 0.15, h), px, fl + h / 2, lz));
-      OBSTACLES.push({ x: wx, z: wz, r: 0.13, top: y, bottom: fl });
-    }
-  }
-  const place = (list, mat, layer, cast = true) => {
-    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+  const place = (list, mat, layer) => {
+    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal'])));
     g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(cx, 0, cz), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(1, 1, 1)));
     const m = new THREE.Mesh(g, mat);
-    m.castShadow = cast; m.receiveShadow = true; m.layers.set(layer);
+    m.castShadow = true; m.receiveShadow = true; m.layers.set(layer);
     scene.add(m);
     return m;
   };
-  place(deck, woodDeck, LAYER.ABOVE);
-  place(frame, woodFrame, LAYER.ABOVE);
-  place(piers, woodFrame, LAYER.BOTH);
-  place(metal, bronze, LAYER.ABOVE);
+  place(blocks, rockMat, LAYER.BOTH);
+  place(rings, lanternMat, LAYER.BOTH);
+  place(deck, lanternMat, LAYER.ABOVE);
+  place(rail, lanternMat, LAYER.ABOVE);
+  // koi keep clear of the masonry: circles across the bridge wherever stone reaches down into their depth
+  for (let x = -half; x <= half; x += 0.28) {
+    const fl = floorAt(x);
+    if (fl > WATER_Y - 0.05) continue;
+    const [wx, wz] = toWorld(x, 0);
+    OBSTACLES.push({ x: wx, z: wz, r: hw + 0.05, top: deckY(x), bottom: Math.max(Math.abs(x) < a0 ? extr(x) - ring : fl, fl) });
+  }
 }
-// ---------- pavilion (azumaya) with a curved tiled hip roof ----------
-const PAVILION = { x: 8.45, z: -0.75, yaw: 0.08, size: 2.6, post: 2.25, floor: 0.38 };
+// ---------- pavilion: a hexagonal jeongja (yukmojeong) with dancheong, giwa roof and gyeja railing ----------
+// corner radius r of the post ring; the floor stands on tall pillar stones above a stone platform
+const PAVILION = { x: 8.45, z: -0.75, yaw: -2.05, r: 1.42, post: 2.2, base: 0.24, stone: 0.46 };
 function kawaraTextures() {
   const N = 256, hf = new Float32Array(N * N), col = new Uint8Array(N * N * 4);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -2501,92 +2592,194 @@ function kawaraTextures() {
   TEX.kawara = dataTex(col, N, N, { srgb: true });
   TEX.kawaraN = dataTex(heightToNormal(hf, N, N, 9), N, N);
 }
+// dancheong for beams: noerok green ground, a central flower (juhwa) in red, blue, yellow and white rings,
+// banded hwi either side, white and ink outlines along both edges. u runs along the beam (1.1 m), v across (0.3 m)
+function dancheongTexture() {
+  const W = 512, H = 256, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  const px = W / 1.1, py = H / 0.3;   // pixels per metre along and across
+  const C = { green: '#3c8770', green2: '#6fae94', blue: '#2b4e8c', blue2: '#7ea2d6', red: '#c23b2a', red2: '#e98a6b', yellow: '#e3b23c', white: '#f3efe2', ink: '#1d1d1b' };
+  ctx.fillStyle = C.green; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2;
+  const ring = (r, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(cx, cy, r * px, r * py, 0, 0, Math.PI * 2); ctx.fill(); };
+  // hwi: chevron bands spreading from the flower toward the ends
+  const bands = [C.white, C.blue, C.blue2, C.white, C.red, C.red2, C.white, C.green2];
+  for (const side of [-1, 1]) {
+    for (let k = bands.length - 1; k >= 0; k--) {
+      const x0 = cx + side * (0.12 + k * 0.022) * px, tip = side * 0.03 * px;
+      ctx.fillStyle = bands[k];
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 0.1 * py); ctx.lineTo(x0, cy - 0.1 * py); ctx.lineTo(x0 + tip, cy); ctx.lineTo(x0, cy + 0.1 * py); ctx.lineTo(cx, cy + 0.1 * py);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  // the flower: lotus petals round concentric rings
+  for (let k = 0; k < 8; k++) {
+    const an = (k / 8) * Math.PI * 2;
+    ctx.save(); ctx.translate(cx + Math.cos(an) * 0.055 * px, cy + Math.sin(an) * 0.055 * py); ctx.rotate(an);
+    ctx.fillStyle = k % 2 ? C.red : C.blue; ctx.beginPath(); ctx.ellipse(0, 0, 0.045 * px, 0.026 * py, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  ring(0.06, C.white); ring(0.05, C.red); ring(0.036, C.white); ring(0.028, C.blue); ring(0.016, C.yellow);
+  // outlines along the beam edges (beams are 0.18-0.26 m tall, so v 0.1-0.9 carries the face)
+  for (const v of [0.13, 0.87]) {
+    ctx.fillStyle = C.white; ctx.fillRect(0, v * H - 4, W, 8);
+    ctx.fillStyle = C.ink; ctx.fillRect(0, v * H - 1, W, 2);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = MAX_ANISO; t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  TEX.dancheong = t;
+}
 function buildPavilion() {
-  kawaraTextures();
-  const P0 = PAVILION, S = P0.size, hs = S / 2;
-  const woodPost = woodMaterial(0xb0a08c, 0.72, 0.9), woodFloor = woodMaterial(0xd4c7b5, 0.8, 1.0);
-  const roofMat = patchMaterial(new THREE.MeshStandardMaterial({ map: TEX.kawara, normalMap: TEX.kawaraN, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.5, metalness: 0.2, envMapIntensity: 1.0, side: THREE.DoubleSide }), { key: 'roof', porosity: 0.3 });
-  const bronze = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x4d5a45, roughness: 0.45, metalness: 0.8 }), { key: 'bronze2', porosity: 0.2 });
+  kawaraTextures(); dancheongTexture();
+  const P0 = PAVILION, N = 6, Rp = P0.r;
+  const paint = (hex, rough = 0.68, key) => patchMaterial(new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0, envMapIntensity: 0.7 }), { key, porosity: 0.5 });
+  const seokganju = paint(0x7d3424, 0.62, 'seokganju'), noerok = paint(0x3c8770, 0.66, 'noerok'), jangdan = paint(0x9a3a26, 0.7, 'jangdan');
+  const capWhite = paint(0xeeeadc, 0.6, 'capwhite'), capBlue = paint(0x2b4e8c, 0.55, 'capblue'), lime = paint(0xdcd8ce, 0.85, 'lime');
+  const danMat = patchMaterial(new THREE.MeshStandardMaterial({ map: TEX.dancheong, roughness: 0.66, metalness: 0, envMapIntensity: 0.7 }), { key: 'dancheong', porosity: 0.5 });
+  const woodFloor = woodMaterial(0xd8c9b2, 0.78, 1.0);
+  const roofMat = patchMaterial(new THREE.MeshStandardMaterial({ map: TEX.kawara, normalMap: TEX.kawaraN, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.55, metalness: 0.15, envMapIntensity: 1.0, side: THREE.DoubleSide }), { key: 'roof', porosity: 0.3 });
   const gy = terrainHeight(P0.x, P0.z);
-  const posts = [], floor = [], roofParts = [], metal = [];
-  const fy = gy + P0.floor;
+  const topBase = gy + P0.base, postFoot = topBase + P0.stone, fy = postFoot + 0.16, eaveBeam = fy + P0.post;
   PAVILION.floorY = fy;
-  for (let i = 0; i < 16; i++) floor.push(xform(plank(S + 0.3, 0.155, 0.05), 0, fy, -hs - 0.15 + (i + 0.5) * ((S + 0.3) / 16)));
-  for (const sx of [-1, 1]) floor.push(xform(plank(S + 0.3, 0.14, 0.14), 0, fy - 0.1, sx * (hs + 0.08)));
-  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    posts.push(xform(plank(0.15, 0.15, P0.post + 0.2), sx * hs, fy + P0.post / 2 - 0.05, sz * hs));
-    posts.push(xform(plank(0.16, 0.16, P0.floor + 0.2), sx * hs, gy + P0.floor / 2 - 0.08, sz * hs));
+  // corners at 30 + 60k degrees, matching polyLathe; side k runs from corner k to k + 1 and faces 60k + 60 degrees
+  const corner = (k, r) => { const a = Math.PI / 6 + k * (Math.PI / 3); return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r); };
+  const H6 = (prof, lift) => polyLathe(prof, N, 4, lift);
+  const stone = [], posts = [], beams = [], floor = [], red = [], green = [], whites = [], blues = [], roofParts = [], limeParts = [];
+  // stone platform (gidan) and tall octagonal pillar stones (jangjucho)
+  stone.push(H6([[0.0, gy - 0.12], [Rp + 0.42, gy - 0.12], [Rp + 0.42, topBase], [0.0, topBase]]));
+  stone.push(H6([[0.0, topBase - 0.02], [Rp + 0.3, topBase - 0.02], [Rp + 0.3, topBase + 0.03], [0.0, topBase + 0.03]]));
+  for (let k = 0; k < N; k++) {
+    const c = corner(k, Rp);
+    stone.push(polyLathe([[0.0, topBase], [0.17, topBase], [0.15, postFoot], [0.0, postFoot]], 8, 2).translate(c.x, 0, c.z));
+    // round posts (wonju) in seokganju red
+    posts.push(keepAttrs(new THREE.CylinderGeometry(0.105, 0.115, eaveBeam - postFoot + 0.1, 16), ['position', 'normal']).translate(c.x, (postFoot + eaveBeam + 0.1) / 2, c.z));
   }
-  for (const [ax, az, rot] of [[0, -hs, 0], [0, hs, 0], [-hs, 0, Math.PI / 2], [hs, 0, Math.PI / 2]]) {
-    const g = plank(S + 0.3, 0.12, 0.18); g.rotateY(rot); g.translate(ax, fy + P0.post - 0.12, az); posts.push(g);
-    const g2 = plank(S, 0.06, 0.06); g2.rotateY(rot); g2.translate(ax, fy + P0.post - 0.42, az); posts.push(g2);
+  // under-floor frame, floor boards and the projecting veranda edge
+  const Rf = Rp + 0.18, apo = Rf * Math.cos(Math.PI / 6);
+  for (let k = 0; k < N; k++) red.push(beamBetween(corner(k, Rp).setY(fy - 0.1), corner(k + 1, Rp).setY(fy - 0.1), 0.14, 0.16));
+  const nb = Math.floor((2 * apo) / 0.17);
+  for (let i = 0; i < nb; i++) {
+    const x = -apo + (i + 0.5) * ((2 * apo) / nb), len = 2 * (Rf - Math.abs(x) / Math.sqrt(3));
+    floor.push(xform(plank(len, 0.165, 0.05), x, fy, (hash1(i + 70) - 0.5) * 0.01, Math.PI / 2));
   }
-  for (const [ax, az, rot] of [[0, -hs + 0.22, 0], [0, hs - 0.22, 0], [hs - 0.22, 0, Math.PI / 2]]) {
-    const g = plank(S - 0.35, 0.36, 0.05); g.rotateY(rot); g.translate(ax, fy + 0.42, az); floor.push(g);
-    for (const t of [-0.8, 0, 0.8]) { const l = plank(0.06, 0.25, 0.4); l.rotateY(rot); l.translate(ax + (rot ? 0 : t), fy + 0.2, az + (rot ? t : 0)); floor.push(l); }
+  for (let k = 0; k < N; k++) floor.push(beamBetween(corner(k, Rf).setY(fy - 0.02), corner(k + 1, Rf).setY(fy - 0.02), 0.08, 0.07));
+  // lintels (changbang) and purlins (dori) in dancheong, bracket ends (ikgong) poking out at each post
+  for (let k = 0; k < N; k++) {
+    const a0 = corner(k, Rp), a1 = corner(k + 1, Rp);
+    beams.push(beamBetween(a0.clone().setY(eaveBeam - 0.14), a1.clone().setY(eaveBeam - 0.14), 0.15, 0.24));
+    beams.push(beamBetween(a0.clone().setY(eaveBeam + 0.1), a1.clone().setY(eaveBeam + 0.1), 0.17, 0.18));
+    beams.push(beamBetween(corner(k, Rp - 0.2).setY(eaveBeam - 0.02), corner(k, Rp + 0.42).setY(eaveBeam - 0.06), 0.12, 0.16));
+    beams.push(beamBetween(corner(k, Rp - 0.1).setY(eaveBeam + 0.24), corner(k, Rp + 0.7).setY(eaveBeam + 0.2), 0.13, 0.15));
   }
-  // roof: concave pyramidal hip roof with upturned eave corners
-  const R0 = hs + 0.78, eaveY = fy + P0.post + 0.02, rise = 1.35;
-  const NU = 96, NV = 18, pos = [], uv = [], idx = [];
+  // gyeja railing round five sides; side 5 (facing the stepping stones) is the way in
+  const Rr = Rf - 0.06;
+  for (let k = 0; k < N; k++) {
+    if (k === N - 1) continue;
+    const a0 = corner(k, Rr), a1 = corner(k + 1, Rr), along = a1.clone().sub(a0), L = along.length();
+    const outN = a0.clone().add(a1).multiplyScalar(0.5).setY(0).normalize();
+    red.push(beamBetween(a0.clone().setY(fy + 0.1), a1.clone().setY(fy + 0.1), 0.05, 0.05));
+    floor.push(beamBetween(a0.clone().setY(fy + 0.25), a1.clone().setY(fy + 0.25), 0.025, 0.22));
+    red.push(beamBetween(a0.clone().setY(fy + 0.38), a1.clone().setY(fy + 0.38), 0.06, 0.05));
+    // the round top rail (dollandae) rides out on curved gyeja legs
+    const t0 = a0.clone().addScaledVector(outN, 0.14).setY(fy + 0.62), t1 = a1.clone().addScaledVector(outN, 0.14).setY(fy + 0.62);
+    red.push(keepAttrs(tubeGeom([t0, t1], () => 0.032, 10), ['position', 'normal']));
+    const nl = Math.max(2, Math.round(L / 0.42));
+    for (let j = 0; j <= nl; j++) {
+      const base = a0.clone().addScaledVector(along, j / nl);
+      const pts = [];
+      for (let q = 0; q <= 8; q++) {
+        const tt = q / 8;
+        pts.push(base.clone().addScaledVector(outN, 0.14 * Math.pow(tt, 1.8) - 0.03 * Math.sin(Math.PI * tt)).setY(fy + 0.36 + 0.26 * tt));
+      }
+      red.push(keepAttrs(tubeGeom(pts, (tt) => lerp(0.022, 0.016, tt), 6), ['position', 'normal']));
+    }
+  }
+  // stone steps up to the open side
+  const sideN = corner(N - 1, 1).add(corner(0, 1)).multiplyScalar(0.5).normalize();
+  const sideA = Math.atan2(-sideN.z, sideN.x);
+  for (const [d, top, w] of [[Rp + 0.62, topBase - 0.09, 1.1], [Rp + 0.38, (topBase + fy) / 2 - 0.05, 0.95]]) {
+    const g = rockGeometry(1300 + Math.round(d * 10), 0.3, 0.1, w / 2, { flatTop: 0.7, square: 0.25, cuts: 3, segs: 18, rings: 8, rough: 0.05 });
+    g.rotateY(sideA);
+    g.translate(sideN.x * d, top, sideN.z * d);
+    stone.push(keepAttrs(g, ['position', 'normal']));
+  }
+  // roof: a six-sided hipped roof (moim jibung) with deep eaves, corners that sweep up (anggok) and out (anheori)
+  const R0 = Rp + 1.0, eaveY = eaveBeam + 0.42, rise = 1.3;
   const roofPoint = (u, v, out, off = 0) => {
-    const side = Math.floor(u * 4) % 4, t = fract(u * 4);
-    const R = lerp(R0, 0.12, Math.pow(v, 0.85));
-    const along = (t * 2 - 1) * R;
-    let x, z;
-    if (side === 0) { x = along; z = -R; } else if (side === 1) { x = R; z = along; } else if (side === 2) { x = -along; z = R; } else { x = -R; z = -along; }
-    const corner = Math.pow(Math.abs(t * 2 - 1), 5);
-    const y = eaveY + rise * Math.pow(v, 1.7) + 0.2 * corner * Math.pow(1 - v, 2.2) + 0.02 * Math.sin(v * Math.PI) + off;
-    return out.set(x, y, z);
+    const side = Math.floor(u * N) % N, t = fract(u * N);
+    const R = lerp(R0, 0.1, Math.pow(v, 0.9));
+    const p = corner(side, 1).lerp(corner(side + 1, 1), t);
+    const cn = Math.abs(t * 2 - 1);
+    const push = 1 + 0.07 * cn * cn * Math.pow(1 - v, 1.5);
+    const y = eaveY + rise * Math.pow(v, 1.3) + 0.34 * Math.pow(cn, 3) * Math.pow(1 - v, 2.0) + off;
+    return out.set(p.x * R * push, y, p.z * R * push);
   };
-  const tmp = new THREE.Vector3();
-  for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
-    const u = i / NU, v = j / NV;
-    roofPoint(u, v, tmp);
-    pos.push(tmp.x, tmp.y, tmp.z);
-    const t = fract(u * 4);
-    const R = lerp(R0, 0.12, Math.pow(v, 0.85));
-    uv.push(((t * 2 - 1) * R) / 1.1, (v * (R0 + rise)) / 1.25);
+  const surface = (off, flip, NU = 144, NV = 20) => {
+    const pos = [], uv = [], idx = [], tmp = new THREE.Vector3();
+    for (let j = 0; j <= NV; j++) for (let i = 0; i <= NU; i++) {
+      const u = i / NU, v = j / NV;
+      roofPoint(u, v, tmp, off);
+      pos.push(tmp.x, tmp.y, tmp.z);
+      const t = fract(u * N), R = lerp(R0, 0.1, Math.pow(v, 0.9));
+      uv.push(((t * 2 - 1) * R) / 1.1, (v * (R0 + rise)) / 1.25);
+    }
+    for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
+      const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
+      if (flip) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    return g;
+  };
+  roofParts.push(surface(0, false));
+  const boards = [keepAttrs(surface(-0.07, true, 72, 12), ['position', 'normal'])];   // jangdan-red boards (gaepan) seen between the rafters
+  // hip ridges (chunyeo maru): white lime bedding under a dark tile crest
+  for (let k = 0; k < N; k++) {
+    const u = k / N + 0.0001, ptsL = [], ptsT = [];
+    for (let q = 0; q <= 16; q++) { ptsL.push(roofPoint(u, q / 16, new THREE.Vector3(), 0.05)); ptsT.push(roofPoint(u, q / 16, new THREE.Vector3(), 0.12)); }
+    limeParts.push(keepAttrs(tubeGeom(ptsL, () => 0.075, 8), ['position', 'normal']));
+    roofParts.push(tubeGeom(ptsT, () => 0.06, 8));
   }
-  for (let j = 0; j < NV; j++) for (let i = 0; i < NU; i++) {
-    const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
-    idx.push(a, b, c, b, d, c);
+  // round eave-end tiles (sumaksae) along the eaves
+  for (let k = 0; k < N; k++) for (let q = 1; q < 16; q++) {
+    const u = (k + q / 16) / N, p0 = roofPoint(u, 0, new THREE.Vector3(), 0.02), p1 = roofPoint(u, 0.03, new THREE.Vector3(), 0.02);
+    const dir = p0.clone().sub(p1).normalize();
+    const g = new THREE.CylinderGeometry(0.055, 0.055, 0.04, 10);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    g.translate(p0.x, p0.y, p0.z);
+    roofParts.push(keepAttrs(g, ['position', 'normal', 'uv']));
   }
-  const rg = new THREE.BufferGeometry();
-  rg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  rg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  rg.setIndex(idx); rg.computeVertexNormals();
-  roofParts.push(rg);
-  for (const cu of [0, 0.25, 0.5, 0.75]) {
-    const pts = [];
-    for (let k = 0; k <= 14; k++) pts.push(roofPoint(cu + 0.0001, k / 14, new THREE.Vector3(), 0.05));
-    roofParts.push(tubeGeom(pts, () => 0.065, 8));
+  // round rafters (yeonmok) in noerok green, their ends ringed white with a blue eye
+  for (let k = 0; k < N; k++) for (let q = 0; q < 12; q++) {
+    const u = (k + (q + 0.5) / 12) / N;
+    const a = roofPoint(u, 0.03, new THREE.Vector3(), -0.115), b = roofPoint(u, 0.62, new THREE.Vector3(), -0.115);
+    green.push(keepAttrs(tubeGeom([b, a], () => 0.036, 8), ['position', 'normal']));
+    const dir = a.clone().sub(b).normalize();
+    for (const [r, len, list] of [[0.037, 0.012, whites], [0.022, 0.018, blues]]) {
+      const g = new THREE.CylinderGeometry(r, r, len, 10);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+      g.translate(a.x + dir.x * len / 2, a.y + dir.y * len / 2, a.z + dir.z * len / 2);
+      list.push(keepAttrs(g, ['position', 'normal']));
+    }
   }
-  const eave = [];
-  for (let k = 0; k <= 96; k++) eave.push(roofPoint(k / 96, 0.0, new THREE.Vector3(), 0.0));
-  roofParts.push(tubeGeom(eave, () => 0.055, 8));
-  metal.push(xform(latheGeom([[0, 0], [0.12, 0], [0.13, 0.05], [0.09, 0.1], [0.12, 0.2], [0.1, 0.3], [0.05, 0.38], [0, 0.45]], 16), 0, eaveY + rise - 0.02, 0));
-  const ceil = [];
-  for (let k = 0; k < 24; k++) {
-    const u = (k + 0.5) / 24;
-    const a = roofPoint(u, 0.02, new THREE.Vector3(), -0.09), b = roofPoint(u, 0.9, new THREE.Vector3(), -0.09);
-    ceil.push(beamBetween(a, b, 0.05, 0.07));
-  }
-  const place = (list, mat, cast = true) => {
-    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+  // jeolbyeongtong: the stacked crown that closes the top
+  roofParts.push(keepAttrs(latheGeom([[0, 0], [0.16, 0], [0.18, 0.05], [0.13, 0.1], [0.17, 0.2], [0.15, 0.3], [0.09, 0.36], [0.13, 0.44], [0.11, 0.52], [0.05, 0.58], [0.07, 0.64], [0.03, 0.7], [0, 0.74]], 16), ['position', 'normal', 'uv']).translate(0, eaveY + rise - 0.06, 0));
+  const place = (list, mat, cast = true, attrs = ['position', 'normal', 'uv']) => {
+    const g = mergeGeoms(list.map((g) => keepAttrs(g, attrs)));
     g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(P0.x, 0, P0.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), P0.yaw), new THREE.Vector3(1, 1, 1)));
     const m = new THREE.Mesh(g, mat);
     m.castShadow = cast; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
     scene.add(m);
   };
-  place(posts.concat(ceil), woodPost); place(floor, woodFloor); place(roofParts, roofMat); place(metal, bronze);
-  const stones = [];
-  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    const g = rockGeometry(900 + sx * 3 + sz, 0.2, 0.12, 0.2, { flatTop: 0.7, square: 0.4, cuts: 4, segs: 16, rings: 8 });
-    const wx = P0.x + sx * hs * Math.cos(P0.yaw) + sz * hs * Math.sin(P0.yaw), wz = P0.z - sx * hs * Math.sin(P0.yaw) + sz * hs * Math.cos(P0.yaw);
-    placeGeom(g, wx, gy + 0.02, wz, 0.3);
-    stones.push(keepAttrs(g, ['position', 'normal']));
-  }
-  const sm = new THREE.Mesh(mergeGeoms(stones), rockMat); sm.castShadow = sm.receiveShadow = true; sm.layers.set(LAYER.ABOVE); scene.add(sm);
+  const PN = ['position', 'normal'];
+  const boardMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x9a3a26, roughness: 0.75, metalness: 0, envMapIntensity: 0.6, side: THREE.DoubleSide }), { key: 'gaepan', porosity: 0.5 });
+  place(posts, seokganju, true, PN); place(red, jangdan, true, PN); place(boards, boardMat, false, PN); place(green, noerok, true, PN);
+  place(whites, capWhite, false, PN); place(blues, capBlue, false, PN); place(limeParts, lime, true, PN);
+  place(beams, danMat); place(floor, woodFloor); place(roofParts, roofMat);
+  place(stone, lanternMat, true, PN);
 }
 // ---------- pier: a small wooden deck over the south shore ----------
 const PIER = { x: 0.85, z: 2.75, len: 2.3, width: 1.0, y: 0.3, yaw: -0.18 };
@@ -3771,7 +3964,7 @@ function buildDragonflies() {
 function dragonflyTarget(df) {
   if (Math.random() < 0.3) {
     // perch on something: iris tips, lantern roofs, lotus buds, the bridge rail
-    const perches = [[-1.95, 1.83, 6.05], [-6.4, 1.06, 0.95], [BRIDGE.cx, BRIDGE.base + BRIDGE.rise + 0.86, BRIDGE.cz]];
+    const perches = [...LANTERNS.map((l) => [l.x, l.top - 0.02, l.z]), [BRIDGE.cx, BRIDGE.base + BRIDGE.rise + 0.66, BRIDGE.cz]];
     const p = perches[Math.floor(Math.random() * perches.length)];
     df.target.set(p[0], p[1] + 0.01, p[2]); df.perchNext = true; return;
   }
