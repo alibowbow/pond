@@ -293,18 +293,20 @@ const P = {
 // Weather / season presets (cross-faded)
 const WEATHER = {
   Sunny:  { tod: 10.5, cloud: 0.55, turbidity: 2.0, overcast: 0.0,  sunMul: 1.0, hemiMul: 1.0, fog: 0.004, fogColor: [0.5, 0.58, 0.68],
-            rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.35, exposure: 0.9,  grade: [1.035, 1.0, 0.955], koi: 1.0 },
+            rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.35, exposure: 0.9,  grade: [1.035, 1.0, 0.955], koi: 1.0, night: 0 },
   Rain:   { tod: 13.0, cloud: 1.0,  turbidity: 6.0, overcast: 0.85, sunMul: 0.1, hemiMul: 2.1, fog: 0.02,  fogColor: [0.2, 0.225, 0.25],
-            rain: 1, wet: 1, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.55, exposure: 1.15, grade: [0.98, 1.0, 1.03], koi: 0.85 },
+            rain: 1, wet: 1, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.55, exposure: 1.15, grade: [0.98, 1.0, 1.03], koi: 0.85, night: 0 },
   Autumn: { tod: 15.7, cloud: 0.42, turbidity: 4.5, overcast: 0.0,  sunMul: 1.0, hemiMul: 1.0, fog: 0.013, fogColor: [0.62, 0.52, 0.4],
-            rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 1, wind: 0.45, exposure: 0.9,  grade: [1.07, 1.0, 0.9], koi: 0.9 },
+            rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 1, wind: 0.45, exposure: 0.9,  grade: [1.07, 1.0, 0.9], koi: 0.9, night: 0 },
   Winter: { tod: 11.5, cloud: 0.95, turbidity: 3.0, overcast: 0.7,  sunMul: 0.3, hemiMul: 1.9, fog: 0.024, fogColor: [0.56, 0.6, 0.66],
-            rain: 0, wet: 0, snow: 1, snowCover: 1, ice: 1, autumn: 0.75, wind: 0.2, exposure: 1.0, grade: [0.97, 1.0, 1.04], koi: 0.35 },
+            rain: 0, wet: 0, snow: 1, snowCover: 1, ice: 1, autumn: 0.75, wind: 0.2, exposure: 1.0, grade: [0.97, 1.0, 1.04], koi: 0.35, night: 0 },
+  Night:  { tod: 19.0, cloud: 0.3,  turbidity: 2.0, overcast: 0.0,  sunMul: 1.0, hemiMul: 1.0, fog: 0.014, fogColor: [0.07, 0.09, 0.15],
+            rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.2, exposure: 1.6, grade: [0.88, 0.97, 1.12], koi: 0.6, night: 1 },
 };
 const WEATHER_NAMES = Object.keys(WEATHER);
 // what the page shows: Korean names for the internal keys
 const KO = {
-  weather: { Sunny: '맑음', Rain: '비', Autumn: '가을', Winter: '겨울' },
+  weather: { Sunny: '맑음', Rain: '비', Autumn: '가을', Winter: '겨울', Night: '달밤' },
   mode: { Cinematic: '영상', Manual: '자유 이동', 'First person': '걷기', 'Follow koi': '따라가기' },
   quality: { High: '높음', Low: '낮음' },
   // variety names as Korean koi keepers say them
@@ -1009,10 +1011,13 @@ const QUALITY = {
 let sunLight, hemiLight, skyMesh, envSkyMesh, envScene, pmrem, envRT = null;
 const env = {                        // live (blended) environment state
   tod: 10.5, cloud: 0.55, turbidity: 2, overcast: 0, sunMul: 1, hemiMul: 1, fog: 0.004, fogColor: new THREE.Color(0.5, 0.58, 0.68),
-  rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.35, exposure: 0.9, grade: new THREE.Vector3(1.035, 1, 0.955), koi: 1,
+  rain: 0, wet: 0, snow: 0, snowCover: 0, ice: 0, autumn: 0, wind: 0.35, exposure: 0.9, grade: new THREE.Vector3(1.035, 1, 0.955), koi: 1, night: 0,
   sunDir: new THREE.Vector3(), sunDirW: new THREE.Vector3(), sunColor: new THREE.Color(), sunI: 3.3, skyCol: new THREE.Color(),
+  lightDir: new THREE.Vector3(0, 1, 0),   // the key light: the sun by day, the moon at night
 };
-const _lastEnvBake = { dir: new THREE.Vector3(0, -1, 0), cloud: -1, overcast: -1, turb: -1, t: -99 };
+const _lastEnvBake = { dir: new THREE.Vector3(0, -1, 0), cloud: -1, overcast: -1, turb: -1, night: -1, t: -99 };
+// the moon hangs high in the north-west, over the island pine as seen from the south bank; its light is cool and dim
+const MOON_DIR = new THREE.Vector3(-0.2, 0.56, -0.8).normalize(), MOON_COL = new THREE.Color(0.66, 0.77, 1.0);
 
 // Global uniforms shared by every patched material (same objects -> one update reaches all)
 const G = {
@@ -1021,7 +1026,7 @@ const G = {
   uAbsorb: { value: new THREE.Vector3(0.22, 0.05, 0.025) }, uScatter: { value: 0.022 }, uInscatter: { value: new THREE.Color(0.02, 0.05, 0.06) },
   uCamUnder: { value: 0 }, tCaustics: { value: null },
   uWindDir: { value: new THREE.Vector2(1, 0) }, uWind: { value: 0.35 }, uGust: { value: 0 },
-  uSnowCover: { value: 0 }, uWet: { value: 0 }, uAutumn: { value: 0 },
+  uSnowCover: { value: 0 }, uWet: { value: 0 }, uAutumn: { value: 0 }, uNight: { value: 0 },
   uFogDensity: { value: 0.004 }, uFogColor: { value: new THREE.Color(0.5, 0.58, 0.68) },
   uRain: { value: 0 }, uIce: { value: 0 },
   uKoiA: { value: Array.from({ length: MAX_KOI }, () => new THREE.Vector4(0, -99, 0, 0)) },
@@ -1086,6 +1091,8 @@ uniform vec3 uCloudSun;
 uniform vec3 uCloudAmb;
 uniform vec3 uGround;
 uniform float uSunDisc;
+uniform float uNight;
+uniform vec3 uMoonDir;
 const float pi = 3.14159265358979323846;
 const float rayleighZenithLength = 8.4E3;
 const float mieZenithLength = 1.25E3;
@@ -1104,6 +1111,28 @@ float cfbm(vec2 p) {
   mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
   for (int i = 0; i < 6; i++) { s += a * vn(p); p = m * p; a *= 0.5; }
   return s;
+}
+float h31(vec3 p) { p = fract(p * vec3(443.897, 441.423, 437.195)); p += dot(p, p.yzx + 19.19); return fract((p.x + p.y) * p.z); }
+// moonlit night: a deep blue dome, paler toward the horizon, a scatter of stars, and the moon in its halo
+vec3 nightSky(vec3 dir) {
+  vec3 col = mix(vec3(0.034, 0.05, 0.088), vec3(0.008, 0.013, 0.032), pow(max(dir.y, 0.0), 0.45));
+  float cm = dot(dir, uMoonDir), cp = max(cm, 0.0);
+  col += vec3(0.16, 0.19, 0.25) * (pow(cp, 900.0) * 0.9 + pow(cp, 60.0) * 0.18 + pow(cp, 8.0) * 0.05);
+  // stars: one candidate in each cell of a grid, most of them dark, each twinkling at its own rate
+  vec3 sp = dir * 210.0, ci = floor(sp);
+  float h = h31(ci);
+  vec3 o = vec3(h31(ci + 7.13), h31(ci + 3.31), h31(ci + 1.77)) * 0.6 + 0.2;
+  float mag = step(0.955, h) * pow(fract(h * 37.0), 2.0);
+  float tw = 0.75 + 0.25 * sin(uTime * (1.3 + fract(h * 91.0) * 3.0) + h * 60.0);
+  vec3 stars = vec3(0.85, 0.9, 1.0) * mag * tw * smoothstep(0.16, 0.0, length(fract(sp) - o)) * 2.2 * smoothstep(0.03, 0.3, dir.y) * (1.0 - smoothstep(0.995, 0.9995, cm));
+  // the moon: a disc a little over two degrees across, with darker seas
+  vec3 mu = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0))), mv = cross(mu, uMoonDir);
+  vec2 q = vec2(dot(dir, mu), dot(dir, mv)) / 0.019;
+  float r = length(q);
+  float disc = smoothstep(1.0, 0.94, r) * step(0.0, cm);
+  float sea = smoothstep(0.5, 0.68, cfbm(q * 1.3 + vec2(3.1, 7.7)));
+  vec3 moon = vec3(1.0, 0.96, 0.86) * disc * (3.2 - 1.1 * sea) * (0.85 + 0.15 * sqrt(max(1.0 - r * r, 0.0)));
+  return col + (stars + moon) * uSunDisc;
 }
 float cloudDensity(vec2 p) {
   float base = cfbm(p);
@@ -1132,18 +1161,20 @@ vec3 skyColour(vec3 direction) {
 void main() {
   vec3 dir = normalize(vWorldPosition - cameraPosition);
   vec3 col = skyColour(dir);
-  // FBM cloud deck, lit brighter toward the sun with crude self-shadowing
+  if (uNight > 0.001) col = mix(col, nightSky(dir), uNight);
+  // FBM cloud deck, lit brighter toward the sun (the moon at night) with crude self-shadowing
+  vec3 L = normalize(mix(vSunDirection, uMoonDir, uNight));
   if (dir.y > 0.0 && uCloud > 0.001) {
     float t = 1.0 / max(dir.y, 0.035);
     vec2 cp = dir.xz * t * 0.55 + uWindDir * uTime * 0.0035;
     float d = cloudDensity(cp);
-    vec2 toSun = normalize(vSunDirection.xz + vec2(1e-4)) * 0.09;
+    vec2 toSun = normalize(L.xz + vec2(1e-4)) * 0.09;
     float d2 = cloudDensity(cp + toSun);
     float d3 = cloudDensity(cp + toSun * 2.2);
     float shade = exp(-(d2 * 1.6 + d3 * 0.9));
-    float cosT = dot(dir, vSunDirection);
+    float cosT = dot(dir, L);
     float fwd = hgPhase(cosT, 0.62) * 6.0 + 0.55;
-    vec3 cc = uCloudAmb * (0.8 + 0.3 * dir.y) * (1.0 - 0.25 * d) + uCloudSun * (0.35 + 0.65 * shade) * fwd * (0.7 + 0.3 * vSunDirection.y);
+    vec3 cc = uCloudAmb * (0.8 + 0.3 * dir.y) * (1.0 - 0.25 * d) + uCloudSun * (0.35 + 0.65 * shade) * fwd * (0.7 + 0.3 * L.y);
     float fade = smoothstep(0.0, 0.14, dir.y);
     col = mix(col, cc, clamp(d * fade, 0.0, 1.0));
   }
@@ -1162,7 +1193,7 @@ function makeSkyMaterial() {
       sunPosition: { value: new THREE.Vector3(0, 1, 0) }, rayleigh: { value: 1 }, turbidity: { value: 2 }, mieCoefficient: { value: 0.005 },
       mieDirectionalG: { value: 0.8 }, uSkyScale: { value: 0.37 }, uCloud: { value: 0.55 }, uOvercast: { value: 0 }, uTime: G.uTime,
       uWindDir: G.uWindDir, uCloudSun: { value: new THREE.Color() }, uCloudAmb: { value: new THREE.Color() }, uGround: { value: new THREE.Color(0.05, 0.055, 0.04) },
-      uSunDisc: { value: 1 },
+      uSunDisc: { value: 1 }, uNight: { value: 0 }, uMoonDir: { value: MOON_DIR },
     },
     vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false,
   });
@@ -1239,7 +1270,7 @@ function buildSkyAndLights() {
 }
 
 // Recompute sun/sky/light/water-optics state from the blended environment.
-const _envZen = new THREE.Color(), _envGrey = new THREE.Color();   // per-frame scratch
+const _envZen = new THREE.Color(), _envGrey = new THREE.Color(), _envNight = new THREE.Color();   // per-frame scratch
 function updateEnvironment(force = false) {
   sunDirection(env.tod, P.azimuth, env.sunDir);
   const sd = env.sunDir;
@@ -1253,9 +1284,14 @@ function updateEnvironment(force = false) {
   env.sunI = 3.3 * clamp(bright, 0, 1.4) * lerp(1, lum * 1.1, 0.35) * env.sunMul * (1 - 0.92 * env.overcast * 0) * elevFade;
   // cloud cover dims the direct sun a little even when not overcast
   env.sunI *= 1 - 0.25 * Math.max(env.cloud - 0.6, 0);
+  // at night the sun's light fades out and the moon takes over as the key light
+  const nt = env.night, sunPart = env.sunI * (1 - nt), moonPart = 0.75 * nt * (1 - 0.7 * env.overcast);
+  const ld = env.lightDir.copy(moonPart > sunPart ? MOON_DIR : sd);
+  env.sunColor.lerp(MOON_COL, moonPart / Math.max(sunPart + moonPart, 1e-4));
+  env.sunI = sunPart + moonPart;
   sunLight.color.copy(env.sunColor);
   sunLight.intensity = env.sunI;
-  sunLight.position.copy(sd).multiplyScalar(70).add(sunLight.target.position);
+  sunLight.position.copy(ld).multiplyScalar(70).add(sunLight.target.position);
   // sky state
   const sky = skyMesh.material.uniforms;
   sky.sunPosition.value.copy(sd);
@@ -1263,24 +1299,25 @@ function updateEnvironment(force = false) {
   sky.mieCoefficient.value = 0.005 + env.overcast * 0.004;
   sky.uCloud.value = env.cloud;
   sky.uOvercast.value = env.overcast;
+  sky.uNight.value = nt;
   const skyZen = _envZen.setRGB(0.32, 0.5, 0.82).multiplyScalar(0.5 + 0.5 * smoothstep(0.0, 0.5, sd.y));
   const grey = 0.55 * (0.35 + 0.65 * smoothstep(0.0, 0.6, sd.y));
   sky.uCloudAmb.value.setRGB(lerp(0.62, grey, env.overcast), lerp(0.66, grey * 1.02, env.overcast), lerp(0.74, grey * 1.07, env.overcast))
-    .multiplyScalar(0.55 + 0.45 * elevFade);
-  sky.uCloudSun.value.copy(env.sunColor).multiplyScalar(0.62 * elevFade * (1 - 0.8 * env.overcast));
+    .multiplyScalar(0.55 + 0.45 * elevFade).lerp(_envNight.setRGB(0.03, 0.036, 0.058), nt);
+  sky.uCloudSun.value.copy(env.sunColor).multiplyScalar(lerp(0.62 * elevFade, 0.09, nt) * (1 - 0.8 * env.overcast));
   sky.uSunDisc.value = 1 - env.overcast;
-  sky.uGround.value.setRGB(0.045, 0.05, 0.035).multiplyScalar(0.5 + 0.5 * elevFade);
+  sky.uGround.value.setRGB(0.045, 0.05, 0.035).multiplyScalar((0.5 + 0.5 * elevFade) * (1 - 0.75 * nt));
   // hemisphere fill
-  env.skyCol.copy(skyZen).lerp(_envGrey.setRGB(grey, grey * 1.02, grey * 1.06), env.overcast);
+  env.skyCol.copy(skyZen).lerp(_envGrey.setRGB(grey, grey * 1.02, grey * 1.06), env.overcast).lerp(_envNight.setRGB(0.2, 0.27, 0.45), nt);
   hemiLight.color.copy(env.skyCol);
-  hemiLight.groundColor.setRGB(0.19, 0.17, 0.12);
-  hemiLight.intensity = 0.2 * env.hemiMul * (0.4 + 0.6 * elevFade);
+  hemiLight.groundColor.setRGB(0.19, 0.17, 0.12).lerp(_envNight.setRGB(0.05, 0.05, 0.06), nt);
+  hemiLight.intensity = lerp(0.2 * env.hemiMul * (0.4 + 0.6 * elevFade), 0.3 * env.hemiMul, nt);
   G.uIblDiffuse.value = lerp(0.45, 0.8, env.overcast);
   // global uniforms
-  G.uSunDir.value.copy(sd);
-  const cosI = sd.y, sinI = Math.sqrt(Math.max(0, 1 - cosI * cosI));
+  G.uSunDir.value.copy(ld);
+  const cosI = ld.y, sinI = Math.sqrt(Math.max(0, 1 - cosI * cosI));
   const sinT = sinI / IOR_WATER, cosT = Math.sqrt(1 - sinT * sinT);
-  const hx = sd.x / Math.max(sinI, 1e-5), hz = sd.z / Math.max(sinI, 1e-5);
+  const hx = ld.x / Math.max(sinI, 1e-5), hz = ld.z / Math.max(sinI, 1e-5);
   G.uSunDirW.value.set(hx * sinT, cosT, hz * sinT).normalize();
   env.sunDirW.copy(G.uSunDirW.value);
   G.uSunColor.value.copy(env.sunColor).multiplyScalar(env.sunI);
@@ -1289,16 +1326,16 @@ function updateEnvironment(force = false) {
   G.uScatter.value = 0.035 / cl;
   // in-scatter radiance: scattering albedo * light in the water column (sky + sun)
   const ext = [G.uAbsorb.value.x + G.uScatter.value, G.uAbsorb.value.y + G.uScatter.value, G.uAbsorb.value.z + G.uScatter.value];
-  const Ls = [0, 1, 2].map((i) => (env.skyCol.toArray()[i] * hemiLight.intensity * 1.6 + [env.sunColor.r, env.sunColor.g, env.sunColor.b][i] * env.sunI * 0.12 * Math.max(sd.y, 0.05) + 0.25 * env.overcast * env.hemiMul * 0.2));
+  const Ls = [0, 1, 2].map((i) => (env.skyCol.toArray()[i] * hemiLight.intensity * 1.6 + [env.sunColor.r, env.sunColor.g, env.sunColor.b][i] * env.sunI * 0.12 * Math.max(ld.y, 0.05) + 0.25 * env.overcast * env.hemiMul * 0.2));
   G.uInscatter.value.setRGB(G.uScatter.value / ext[0] * Ls[0] * 0.55, G.uScatter.value / ext[1] * Ls[1] * 0.55, G.uScatter.value / ext[2] * Ls[2] * 0.55);
   G.uFogDensity.value = env.fog;
   G.uFogColor.value.copy(env.fogColor).multiplyScalar(0.55 + 0.45 * elevFade);
-  G.uSnowCover.value = env.snowCover; G.uWet.value = env.wet; G.uAutumn.value = env.autumn;
+  G.uSnowCover.value = env.snowCover; G.uWet.value = env.wet; G.uAutumn.value = env.autumn; G.uNight.value = nt;
   G.uRain.value = env.rain; G.uIce.value = env.ice;
-  G.uCaustic.value = P.caustics * (1 - env.overcast * 0.85) * smoothstep(0.05, 0.35, sd.y) * Math.min(env.sunMul * 1.2, 1);
+  G.uCaustic.value = P.caustics * (1 - env.overcast * 0.85) * smoothstep(0.05, 0.35, ld.y) * Math.min(env.sunMul * 1.2, 1) * (1 - 0.5 * nt);
   // re-bake the environment when the sky has changed enough
   const changed = force || _lastEnvBake.dir.angleTo(sd) > 0.4 * DEG || Math.abs(_lastEnvBake.cloud - env.cloud) > 0.02 ||
-    Math.abs(_lastEnvBake.overcast - env.overcast) > 0.02 || Math.abs(_lastEnvBake.turb - env.turbidity) > 0.1;
+    Math.abs(_lastEnvBake.overcast - env.overcast) > 0.02 || Math.abs(_lastEnvBake.turb - env.turbidity) > 0.1 || Math.abs(_lastEnvBake.night - env.night) > 0.02;
   if (changed && (force || clock.elapsed - _lastEnvBake.t > 0.35)) bakeEnvironment();
 }
 function bakeEnvironment() {
@@ -1309,7 +1346,7 @@ function bakeEnvironment() {
   skyMesh.material.uniforms.uSunDisc.value = disc;
   scene.environment = envRT.texture;
   if (old) old.dispose();
-  _lastEnvBake.dir.copy(env.sunDir); _lastEnvBake.cloud = env.cloud; _lastEnvBake.overcast = env.overcast; _lastEnvBake.turb = env.turbidity;
+  _lastEnvBake.dir.copy(env.sunDir); _lastEnvBake.cloud = env.cloud; _lastEnvBake.overcast = env.overcast; _lastEnvBake.turb = env.turbidity; _lastEnvBake.night = env.night;
   _lastEnvBake.t = clock.elapsed;
 }
 
@@ -1360,6 +1397,7 @@ uniform float uGust;
 uniform float uSnowCover;
 uniform float uWet;
 uniform float uAutumn;
+uniform float uNight;
 uniform float uFogDensity;
 uniform vec3 uFogColor;
 uniform float uRain;
@@ -1880,6 +1918,10 @@ const GLSL_SPEC_LOSS = /* glsl */`
     keep = mix(keep, 1.0, koiSparkleKeep);
   #endif
   reflectedLight.directSpecular *= keep;
+  #ifdef LEAF
+    // under the moon, the grazing sheen on leaves and grass reads as frost: keep only a little of it
+    reflectedLight.directSpecular *= 1.0 - 0.85 * uNight;
+  #endif
   reflectedLight.indirectSpecular *= keep;
   #ifdef USE_CLEARCOAT
     clearcoatSpecularDirect *= keep;
@@ -2807,6 +2849,18 @@ function buildPavilion() {
   }
   // jeolbyeongtong: the stacked crown that closes the top
   roofParts.push(keepAttrs(latheGeom([[0, 0], [0.16, 0], [0.18, 0.05], [0.13, 0.1], [0.17, 0.2], [0.15, 0.3], [0.09, 0.36], [0.13, 0.44], [0.11, 0.52], [0.05, 0.58], [0.07, 0.64], [0.03, 0.7], [0, 0.74]], 16), ['position', 'normal', 'uv']).translate(0, eaveY + rise - 0.06, 0));
+  // pungyeong: a small bronze bell under each corner of the eaves, a thin fish-shaped plate swinging from its clapper
+  const bells = [];
+  for (let k = 0; k < N; k++) {
+    const p = roofPoint(k / N + 1e-4, 0.06, new THREE.Vector3(), -0.2), a = Math.PI / 6 + k * (Math.PI / 3);
+    bells.push(new THREE.CylinderGeometry(0.005, 0.005, 0.08, 5).translate(p.x, p.y + 0.01, p.z));
+    bells.push(latheGeom([[0, -0.17], [0.05, -0.17], [0.047, -0.14], [0.036, -0.1], [0.026, -0.08], [0.012, -0.072], [0, -0.07]], 14).translate(p.x, p.y, p.z));
+    bells.push(new THREE.CylinderGeometry(0.0025, 0.0025, 0.09, 4).translate(p.x, p.y - 0.21, p.z));
+    const fish = new THREE.BoxGeometry(0.006, 0.075, 0.07);
+    fish.applyMatrix4(new THREE.Matrix4().makeRotationY(-a)).translate(p.x, p.y - 0.29, p.z);
+    bells.push(fish);
+  }
+  PAVILION.bell = new THREE.Vector3(P0.x, eaveY, P0.z);
   const place = (list, mat, cast = true, attrs = ['position', 'normal', 'uv']) => {
     const g = mergeGeoms(list.map((g) => keepAttrs(g, attrs)));
     g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(P0.x, 0, P0.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), P0.yaw), new THREE.Vector3(1, 1, 1)));
@@ -2820,6 +2874,7 @@ function buildPavilion() {
   place(whites, capWhite, false, PN); place(blues, capBlue, false, PN); place(limeParts, lime, true, PN);
   place(beams, danMat); place(floor, woodFloor); place(roofParts, roofMat);
   place(stone, lanternMat, true, PN);
+  place(bells, patchMaterial(new THREE.MeshStandardMaterial({ color: 0x5a6e58, roughness: 0.45, metalness: 0.55, envMapIntensity: 0.9 }), { key: 'bronze', porosity: 0.3 }), false, PN);
 }
 // ---------- gwaneodae: a granite platform for watching the fish, reaching out from the south bank ----------
 const PIER = { x: -0.85, z: 3.3, len: 2.1, width: 1.1, y: 0.3, yaw: 0 };
@@ -6369,10 +6424,15 @@ function highestKoi() {
   for (let i = 0; i < P.fishCount; i++) if (FISH[i].pos.y > best.pos.y) best = FISH[i];
   return best;
 }
-// each shot returns camera position and look target for normalised time u
+// each shot returns camera position and look target for normalised time u; night shots only run after dark
 const SHOTS = [
-  { name: '하늘에서 본 정원', sub: 'The garden from above', dur: 13, fn(u, s) { const a = lerp(2.2, 1.45, easeIO(u)); const r = lerp(12.5, 10, easeIO(u)); _cp.set(0.5 + Math.cos(a) * r, lerp(13.5, 8.5, easeIO(u)), -1 + Math.sin(a) * r); _ct.set(0.5, 0, -1.4); } },
-  { name: '연못', sub: 'The pond', dur: 11, fn(u) { _cp.set(lerp(-2.5, 1.8, easeIO(u)), lerp(2.6, 2.1, u), lerp(9.8, 8.6, u)); _ct.set(lerp(-0.6, 0.6, u), -0.2, -0.6); } },
+  { name: '하늘에서 본 달못', sub: 'Dalmot from above', dur: 13, fn(u) { const a = lerp(2.2, 1.45, easeIO(u)); const r = lerp(12.5, 10, easeIO(u)); _cp.set(0.2 + Math.cos(a) * r, lerp(13.5, 8.5, easeIO(u)), -0.8 + Math.sin(a) * r); _ct.set(0.2, 0, -0.8); } },
+  { name: '네모난 못, 둥근 섬', sub: 'A square pond with a round island', dur: 12, fn(u) { const a = lerp(1.15, 2.05, easeIO(u)); _cp.set(ISLAND.x + Math.cos(a) * 4.2, lerp(1.5, 1.1, u), ISLAND.z + Math.sin(a) * 4.2); _ct.set(ISLAND.x, lerp(1.1, 1.5, u), ISLAND.z); } },
+  { name: '달이 머무는 연못', sub: 'The moon resting on the pond', dur: 14, night: true, fn(u) {
+      const e = easeIO(u);
+      _cp.set(-2.4, lerp(1.0, 0.85, u), lerp(4.7, 4.5, u));
+      _ct.set(lerp(-3.18, -3.48, e), lerp(4.0, -0.86, e), lerp(-0.44, -0.06, e));
+    } },
   { name: '비단잉어', sub: 'Koi', dur: 11, start(s) { s.subject = highestKoi(); }, fn(u, s) {
       const f = s.subject || FISH[0];
       const back = new THREE.Vector3(-Math.cos(f.heading), 0, Math.sin(f.heading));
@@ -6380,24 +6440,22 @@ const SHOTS = [
       const side = new THREE.Vector3(-back.z, 0, back.x);
       _cp.set(f.pos.x + back.x * (0.45 + f.size * 0.9) + side.x * 0.35, WATER_Y + 0.45 + f.size * 0.55, f.pos.z + back.z * (0.45 + f.size * 0.9) + side.z * 0.35);
     } },
-  { name: '연꽃', sub: 'Lotus', dur: 10, fn(u) { const a = lerp(-0.4, 0.5, easeIO(u)); _cp.set(4.95 + Math.cos(a) * 2.1, lerp(0.75, 1.05, u), 0.55 + Math.sin(a) * 2.1 + 0.3); _ct.set(4.95, 0.55, 0.45); } },
+  { name: '홍예교', sub: 'The stone rainbow bridge', dur: 11, fn(u) { _cp.set(lerp(-1.6, -0.5, easeIO(u)), lerp(1.0, 0.65, u), lerp(1.7, 0.5, easeIO(u))); _ct.set(2.6, 0.45, -0.9); } },
+  { name: '육모정', sub: 'The six-sided pavilion', dur: 12, fn(u) { _cp.set(lerp(5.4, 6.6, easeIO(u)), lerp(1.4, 2.0, u), lerp(4.1, 2.9, easeIO(u))); _ct.set(PAVILION.x, lerp(1.5, 3.1, easeIO(u)), PAVILION.z); } },
+  { name: '청사초롱', sub: 'Silk lanterns', dur: 11, night: true, fn(u) { _cp.set(lerp(2.4, 3.0, easeIO(u)), lerp(1.35, 1.55, u), lerp(4.6, 4.1, easeIO(u))); _ct.set(lerp(3.7, 5.0, easeIO(u)), 1.5, lerp(2.5, 2.9, easeIO(u))); } },
+  { name: '연지의 연꽃', sub: 'Lotus in the lotus pond', dur: 10, fn(u) { const a = lerp(-0.4, 0.5, easeIO(u)); _cp.set(4.95 + Math.cos(a) * 2.1, lerp(0.75, 1.05, u), 0.55 + Math.sin(a) * 2.1 + 0.3); _ct.set(4.95, 0.55, 0.45); } },
+  { name: '팔각석등', sub: 'The octagonal stone lantern', dur: 10, fn(u) { const a = lerp(0.6, 1.3, easeIO(u)); _cp.set(-1.95 + Math.cos(a) * 1.9, lerp(1.25, 1.45, u), 6.05 + Math.sin(a) * 1.9); _ct.set(-1.95, 1.05, 6.05); } },
   { name: '대숲', sub: 'Bamboo grove', dur: 12, fn(u) { _cp.set(lerp(-9.5, -10.3, u), lerp(1.3, 2.4, easeIO(u)), lerp(-2.6, -3.7, u)); _ct.set(-11.6, lerp(3.0, 6.0, easeIO(u)), -6.8); } },
-  { name: '수양벚나무', sub: 'Weeping cherry', dur: 10, fn(u) { _cp.set(lerp(-3.4, -4.6, easeIO(u)), lerp(1.3, 1.6, u), lerp(-0.6, -1.6, easeIO(u))); _ct.set(-7.1, lerp(1.9, 2.3, u), -3.3); } },
-  { name: '벚꽃', sub: 'Cherry blossom', dur: 11, fn(u) { const a = lerp(2.0, 3.0, easeIO(u)); _cp.set(7.7 + Math.cos(a) * 5.2, lerp(1.6, 2.4, u), 4.2 + Math.sin(a) * 5.2); _ct.set(7.7, 2.6, 4.2); } },
   { name: '참개구리', sub: 'Pond frog', dur: 10, fn(u) {
       const g = FROG.group ? FROG.group.position : new THREE.Vector3(-4.4, 0, -2.2);
       const a = lerp(0.9, 1.5, easeIO(u));
       _cp.set(g.x + Math.cos(a) * 0.55, WATER_Y + 0.16, g.z + Math.sin(a) * 0.55); _ct.set(g.x, g.y + 0.03, g.z);
     } },
-  { name: '연못 거북', sub: 'Slider turtle', dur: 9, fn(u) {
-      const p = TURTLE.pos, a = lerp(0.3, 1.2, easeIO(u)) + TURTLE.yaw;
-      _cp.set(p.x + Math.cos(a) * 1.1, Math.max(p.y + 0.45, WATER_Y + 0.25), p.z + Math.sin(a) * 1.1); _ct.set(p.x, p.y + 0.05, p.z);
-    } },
   { name: '물속', sub: 'Beneath the surface', dur: 13, under: true, fn(u) { _cp.set(lerp(-3.8, -1.2, easeIO(u)), lerp(-0.35, -0.55, u), lerp(1.6, 0.6, u)); _ct.set(lerp(-2.4, 0.4, u), -0.45, -2.2); } },
-  { name: '다시, 연못', sub: 'Back to the pond', dur: 11, fn(u) { _cp.set(lerp(3.6, 0.6, easeIO(u)), lerp(3.2, 2.4, u), lerp(10.2, 10.5, u)); _ct.set(0, -0.3, 0); } },
+  { name: '다시, 달못', sub: 'Back to Dalmot', dur: 11, fn(u) { _cp.set(lerp(3.6, 0.6, easeIO(u)), lerp(3.2, 2.4, u), lerp(10.2, 10.5, u)); _ct.set(0, -0.3, 0); } },
 ];
 function cinematicUpdate(dtReal) {
-  const shots = SHOTS.filter((s) => !(s.under && P.stayAbove));
+  const shots = SHOTS.filter((s) => !(s.under && P.stayAbove) && (!s.night || env.night > 0.5));
   if (CAM.shot >= shots.length) CAM.shot = 0;
   const S = shots[CAM.shot];
   if (CAM.lastShot !== CAM.shot) { CAM.lastShot = CAM.shot; if (S.start) S.start(CAM); showCaption(S.name, S.sub); POST.snapFocus = true; }
@@ -6478,7 +6536,7 @@ function showCaption(name, sub) {
 function hideCaption() { const el = document.getElementById('caption'); if (el) el.classList.remove('on'); }
 // ---------- audio: everything synthesised with Web Audio; starts on the first click or key ----------
 const AUDIO = {
-  ctx: null, started: false, muted: false, master: null, lowpass: null, dry: null, wet: null, loops: {}, nextBird: 6, nextKnock: 14, nextDrip: 1, buzzT: 0,
+  ctx: null, started: false, muted: false, master: null, lowpass: null, dry: null, wet: null, loops: {}, nextBird: 6, nextChime: 9, nextCricket: 1, nextDrip: 1, buzzT: 0,
   start() {
     if (this.started) return;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -6585,12 +6643,25 @@ const AUDIO = {
       o.start(t); fm.start(t); o.stop(t + 0.12); fm.stop(t + 0.12);
     }
   },
-  knock() {
-    // shishi-odoshi: the bamboo tips, empties and knocks against the stone
-    this.burst(0.05, 'bandpass', 1100, 3, 0.25, 0.001);
-    this.tone('sine', 720, 640, 0.35, 0.16, this.bus, 0.001);
-    this.tone('triangle', 360, 330, 0.25, 0.06, this.bus, 0.001);
-    setTimeout(() => this.burst(0.6, 'bandpass', 1800, 1.2, 0.03), 60);
+  chime(vol = 1) {
+    // pungyeong: the fish under the pavilion eaves swings in the wind and strikes its bronze bell
+    const f0 = 1180 + Math.random() * 140;
+    for (const [m, a, d] of [[1, 0.05, 2.4], [2.32, 0.03, 1.6], [4.25, 0.018, 0.9], [6.8, 0.01, 0.5]]) this.tone('sine', f0 * m, f0 * m * 0.998, d, a * vol, this.bus, 0.002);
+    this.burst(0.03, 'highpass', 5000, 0.7, 0.015 * vol, 0.001);
+  },
+  cricket() {
+    // a field cricket's chirp: a few quick pulses of a high, thin tone
+    if (!this.started) return;
+    const c = this.ctx, t0 = c.currentTime, f = 4100 + Math.random() * 700, n = 3 + Math.floor(Math.random() * 3);
+    const pan = c.createStereoPanner ? c.createStereoPanner() : null, out = c.createGain();
+    out.gain.value = 0.5 + Math.random() * 0.5;
+    if (pan) { pan.pan.value = Math.random() * 1.8 - 0.9; out.connect(pan); pan.connect(this.bus); } else out.connect(this.bus);
+    for (let i = 0; i < n; i++) {
+      const t = t0 + i * 0.048, o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      this.env(g, t, 0.004, 0.014, 0.026);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.04);
+    }
   },
   drip() { this.tone('sine', 1500 + Math.random() * 900, 700, 0.09, 0.03); },
   buzzNear(pos, speed) {
@@ -6627,9 +6698,14 @@ const AUDIO = {
     set(this.loops.under, under ? 0.3 : 0);
     this.dry.gain.setTargetAtTime(1 - env.rain * 0.25, t, 0.3);          // rain muffles the garden a little
     this.buzzT -= dt;
-    this.nextBird -= dt; this.nextKnock -= dt; this.nextDrip -= dt;
-    if (this.nextBird < 0) { this.nextBird = (8 + Math.random() * 18) * (1 + env.rain * 2 + env.snow * 2); if (!under) this.bird(); }
-    if (this.nextKnock < 0) { this.nextKnock = 12 + Math.random() * 18; this.knock(); }
+    this.nextBird -= dt; this.nextChime -= dt; this.nextCricket -= dt; this.nextDrip -= dt;
+    if (this.nextBird < 0) { this.nextBird = (8 + Math.random() * 18) * (1 + env.rain * 2 + env.snow * 2); if (!under && env.night < 0.5) this.bird(); }
+    if (this.nextCricket < 0) { this.nextCricket = 0.3 + Math.random() * 1.3; if (!under && env.night > 0.5) this.cricket(); }
+    if (this.nextChime < 0) {
+      // the bells ring more often when the wind gusts, and louder near the pavilion
+      this.nextChime = (5 + Math.random() * 14) / (0.6 + G.uWind.value + G.uGust.value);
+      if (PAVILION.bell) this.chime(clamp(1.3 - camera.position.distanceTo(PAVILION.bell) / 10, 0.2, 1));
+    }
     if (this.nextDrip < 0) { this.nextDrip = 0.6 + Math.random() * 2.4; if (dFalls < 6) this.drip(); }
   },
 };
@@ -8353,7 +8429,7 @@ function setWeather(name, instant = false) {
 function blendWeather(dt) {
   const w = WEATHER[P.weather];
   const k = 1 - Math.exp(-dt / 2.2), kSlow = 1 - Math.exp(-dt / 4.4);   // cover, ice and wetness settle at half speed
-  for (const key of ['cloud', 'turbidity', 'overcast', 'sunMul', 'hemiMul', 'fog', 'rain', 'wet', 'snow', 'snowCover', 'ice', 'autumn', 'exposure', 'koi']) {
+  for (const key of ['cloud', 'turbidity', 'overcast', 'sunMul', 'hemiMul', 'fog', 'rain', 'wet', 'snow', 'snowCover', 'ice', 'autumn', 'exposure', 'koi', 'night']) {
     const rate = key === 'snowCover' || key === 'ice' || key === 'wet' ? kSlow : k;
     env[key] = lerp(env[key], w[key], rate);
   }
@@ -8361,6 +8437,127 @@ function blendWeather(dt) {
   env.grade.lerp(_v3.set(w.grade[0], w.grade[1], w.grade[2]), k);
   env.tod = lerp(env.tod, P.tod, k);
   env.wind = lerp(env.wind, P.wind, k);
+}
+// ---------- lamps for the moonlit night: silk lanterns (cheongsa chorong), lit stone lanterns, fireflies ----------
+// chorong poles: [x, z, yaw]; the arm reaches along local +x and the lantern hangs from its tip
+const CHORONG_POLES = [[4.05, 2.55, Math.PI], [5.3, 4.6, 2.24]];
+const LAMPS = { lights: [], cores: [], red: null, blue: null, core: null, flies: null };
+// a cheongsa chorong hanging from its hook at the origin: blue silk above and below, red silk round the middle,
+// a dark lacquered cap and foot, thin ribs, and a red tassel
+function chorongParts() {
+  const silkR = [], silkB = [], dark = [], tassel = [];
+  silkB.push(latheGeom([[0.122, -0.44], [0.135, -0.4], [0.14, -0.37]], 20));
+  silkR.push(latheGeom([[0.14, -0.37], [0.148, -0.32], [0.15, -0.25], [0.148, -0.18], [0.14, -0.14]], 20));
+  silkB.push(latheGeom([[0.14, -0.14], [0.135, -0.11], [0.125, -0.085]], 20));
+  dark.push(latheGeom([[0, -0.456], [0.112, -0.456], [0.126, -0.44], [0, -0.44]], 20));
+  dark.push(latheGeom([[0, -0.09], [0.13, -0.09], [0.135, -0.08], [0.09, -0.06], [0.03, -0.04], [0, -0.035]], 20));
+  dark.push(new THREE.CylinderGeometry(0.005, 0.005, 0.04, 5).translate(0, -0.02, 0));
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4, pts = [[0.124, -0.44], [0.137, -0.4], [0.143, -0.37], [0.151, -0.32], [0.153, -0.25], [0.151, -0.18], [0.143, -0.14], [0.138, -0.11], [0.128, -0.085]];
+    dark.push(tubeGeom(pts.map(([r, y]) => new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r)), () => 0.0035, 4));
+  }
+  tassel.push(latheGeom([[0, -0.64], [0.02, -0.62], [0.012, -0.5], [0.022, -0.475], [0.01, -0.456], [0, -0.455]], 10));
+  return { silkR, silkB, dark, tassel };
+}
+function buildLamps() {
+  const silk = (hex, glow, key) => patchMaterial(new THREE.MeshStandardMaterial({ color: hex, emissive: glow, emissiveIntensity: 0, roughness: 0.85, metalness: 0, envMapIntensity: 0.5 }), { key, noWeather: true, porosity: 0 });
+  LAMPS.red = silk(0xb8322a, 0xff4424, 'silkR'); LAMPS.blue = silk(0x24448f, 0x4068ff, 'silkB');
+  const darkM = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x2a201b, roughness: 0.55, metalness: 0.1, envMapIntensity: 0.6 }), { key: 'lacquer', porosity: 0.4 });
+  const tasselM = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x9c1f24, roughness: 0.9, metalness: 0 }), { key: 'tassel', noWeather: true, porosity: 0 });
+  const poleM = woodMaterial(0x6b4c36, 0.72, 0.9);
+  const lists = { silkR: [], silkB: [], dark: [], tassel: [], pole: [], base: [] };
+  const hang = (hook, drop) => {
+    // lantern parts at the end of a cord `drop` long below the hook
+    const parts = chorongParts();
+    lists.dark.push(new THREE.CylinderGeometry(0.003, 0.003, drop, 4).translate(hook.x, hook.y - drop / 2, hook.z));
+    for (const k of ['silkR', 'silkB', 'dark', 'tassel']) for (const g of parts[k]) lists[k].push(keepAttrs(g, ['position', 'normal']).translate(hook.x, hook.y - drop, hook.z));
+    return new THREE.Vector3(hook.x, hook.y - drop - 0.26, hook.z);
+  };
+  const warm = new THREE.Color(1.0, 0.64, 0.36);
+  const light = (pos, I, dist) => {
+    const l = new THREE.PointLight(warm, 0, dist, 2);
+    l.position.copy(pos); l.userData.I = I;
+    scene.add(l); LAMPS.lights.push(l);
+  };
+  // two lanterns under the eaves either side of the pavilion's open side, and a lamp inside lighting the dancheong
+  const Y = new THREE.Vector3(0, 1, 0), pav = (v) => v.applyAxisAngle(Y, PAVILION.yaw).add(new THREE.Vector3(PAVILION.x, 0, PAVILION.z));
+  const eave = PAVILION.floorY + PAVILION.post;
+  for (const k of [5, 0]) {
+    const a = Math.PI / 6 + k * (Math.PI / 3);
+    hang(pav(new THREE.Vector3(Math.cos(a) * (PAVILION.r + 0.36), eave - 0.16, Math.sin(a) * (PAVILION.r + 0.36))), 0.24);
+  }
+  light(new THREE.Vector3(PAVILION.x, PAVILION.floorY + 1.55, PAVILION.z), 2.6, 7);
+  // chorong poles: a wooden post on a stone foot, a curved arm, the lantern on a short cord
+  for (const [x, z, yaw] of CHORONG_POLES) {
+    const gy = terrainHeight(x, z), q = new THREE.Quaternion().setFromAxisAngle(Y, yaw);
+    const W = (lx, ly) => new THREE.Vector3(lx, ly, 0).applyQuaternion(q).add(new THREE.Vector3(x, gy, z));
+    lists.base.push(boxAt(0.26, 0.16, 0.26, x, gy + 0.03, z, yaw));
+    lists.pole.push(beamBetween(W(0, 0.08), W(0, 1.95), 0.075, 0.075));
+    lists.pole.push(beamBetween(W(-0.02, 1.86), W(0.44, 1.93), 0.05, 0.05));
+    lists.pole.push(beamBetween(W(0, 1.6), W(0.22, 1.88), 0.035, 0.035));
+    const c = hang(W(0.4, 1.9), 0.08);
+    light(c, 1.1, 5.5);
+  }
+  // the stone lanterns' fire chambers glow
+  LAMPS.core = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const fires = [[-1.95, 6.05, 1.29, 0.07], [-6.4, 0.95, 0.69, 0.08]];
+  for (const [x, z, dy, r] of fires) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8).scale(1, 1.4, 1), LAMPS.core);
+    m.position.set(x, terrainHeight(x, z) - 0.03 + dy, z);
+    m.layers.set(LAYER.ABOVE); m.visible = false;
+    scene.add(m); LAMPS.cores.push(m);
+  }
+  light(new THREE.Vector3(-1.95, terrainHeight(-1.95, 6.05) + 1.29, 6.05), 0.9, 5);
+  const put = (list, mat, cast) => {
+    const m = new THREE.Mesh(mergeGeoms(list.map((g) => keepAttrs(g, mat === poleM ? ['position', 'normal', 'uv'] : ['position', 'normal']))), mat);
+    m.castShadow = cast; m.receiveShadow = true; m.layers.set(LAYER.ABOVE);
+    scene.add(m);
+  };
+  put(lists.silkR, LAMPS.red, false); put(lists.silkB, LAMPS.blue, false); put(lists.dark, darkM, false); put(lists.tassel, tasselM, false);
+  put(lists.pole, poleM, true); put(lists.base, lanternMat, true);
+  // fireflies drifting over the banks and the water near them, each blinking at its own pace
+  const N = 80, g = new THREE.InstancedBufferGeometry(), R = mulberry32(808);
+  g.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  const base = new Float32Array(N * 3), seed = new Float32Array(N * 4);
+  for (let i = 0; i < N; i++) {
+    const q = shorePoint(R(), lerp(-0.9, 1.8, R()));
+    base.set([q[0], Math.max(terrainHeight(q[0], q[1]), 0) + 0.25 + R() * 1.1, q[1]], i * 3);
+    seed.set([R(), R(), R(), R()], i * 4);
+  }
+  g.setAttribute('aBase', new THREE.InstancedBufferAttribute(base, 3));
+  g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seed, 4));
+  g.instanceCount = N;
+  const fm = new THREE.ShaderMaterial({
+    uniforms: { uTime: G.uTime, uOn: { value: 0 } },
+    vertexShader: `attribute vec3 aBase; attribute vec4 aSeed; uniform float uTime; uniform float uOn; varying vec2 vUv; varying float vA;
+      void main() {
+        float t = uTime;
+        vec3 p = aBase + vec3(sin(t * (0.19 + aSeed.x * 0.2) + aSeed.y * 6.283) * 0.6, sin(t * (0.31 + aSeed.z * 0.3) + aSeed.w * 6.283) * 0.2, cos(t * (0.16 + aSeed.y * 0.2) + aSeed.x * 6.283) * 0.6);
+        vA = uOn * pow(max(sin(t * (0.8 + aSeed.w * 0.9) + aSeed.z * 31.0), 0.0), 3.0);
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        mv.xy += position.xy * 0.03;
+        vUv = position.xy;
+        gl_Position = projectionMatrix * mv;
+        if (vA < 0.004) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      }`,
+    fragmentShader: `varying vec2 vUv; varying float vA;
+      void main() { gl_FragColor = vec4(vec3(0.72, 1.0, 0.32) * 4.0, exp(-dot(vUv, vUv) * 5.0) * vA); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  LAMPS.flies = new THREE.Mesh(g, fm);
+  LAMPS.flies.frustumCulled = false; LAMPS.flies.layers.set(LAYER.ABOVE); LAMPS.flies.renderOrder = 21; LAMPS.flies.visible = false;
+  scene.add(LAMPS.flies);
+}
+function updateLamps() {
+  const on = smoothstep(0.35, 0.9, env.night), t = G.uTime.value;
+  const fl = on * (0.93 + 0.07 * Math.sin(t * 11.3) * Math.sin(t * 7.1 + 1.3));   // candle flicker
+  LAMPS.red.emissiveIntensity = 0.85 * fl; LAMPS.blue.emissiveIntensity = 0.48 * fl;
+  LAMPS.core.color.setRGB(1.0, 0.56, 0.24).multiplyScalar(3.2 * fl);
+  for (const c of LAMPS.cores) c.visible = on > 0.01;
+  for (const l of LAMPS.lights) l.intensity = l.userData.I * fl;
+  LAMPS.flies.material.uniforms.uOn.value = on;
+  LAMPS.flies.visible = on > 0.01;
 }
 let precipMesh;
 function buildPrecip() {
@@ -8762,6 +8959,7 @@ function renderFrame() {
   updateEnvironment();
   updateMountains();
   updatePrecip();
+  updateLamps();
   skyMesh.position.copy(camera.position);
   // water simulation, shadows
   stepWaterSim(clock.dt);
@@ -8827,7 +9025,7 @@ const KOI = {
   ready: false, paused: false,
   view(p, t) { CAM.mode = 'Manual'; P.camMode = 'Manual'; lookAt(p[0], p[1], p[2], t[0], t[1], t[2]); POST.snapFocus = true; },
   focusNow() { POST.snapFocus = true; },
-  tour(shot, u = 0.5) { CAM.mode = 'Cinematic'; CAM.shot = shot; CAM.lastShot = -1; const S = SHOTS.filter((x) => !(x.under && P.stayAbove))[shot]; CAM.t = S.dur * u; },
+  tour(shot, u = 0.5) { CAM.mode = 'Cinematic'; CAM.shot = shot; CAM.lastShot = -1; const S = SHOTS.filter((x) => !(x.under && P.stayAbove) && (!x.night || env.night > 0.5))[shot]; CAM.t = S.dur * u; },
   setWeather: (n, instant = true) => setWeather(n, instant),
   mode: (m) => setCamMode(m),
   frames(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) step(dt); this.sync(); },
@@ -8962,7 +9160,7 @@ async function init() {
     ['나무와 대나무', buildTrees],
     ['물풀', () => { buildWaterPlants(); buildFalling(); }],
     ['연못 생물', buildPondLife],
-    ['날씨', buildPrecip],
+    ['날씨', () => { buildPrecip(); buildLamps(); }],
     ['후처리', buildPost],
     ['물', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['비단잉어', buildKoi],

@@ -1,10 +1,11 @@
-// cinematic tour shots: node tools/tour.mjs out [shot indices]
+// cinematic tour shots: node tools/tour.mjs out [shot indices] [weather, e.g. Night]
 import { open } from './harness.mjs';
 import path from 'node:path';
 const out = process.argv[2];
 const list = (process.argv[3] || '0,2,4,7').split(',').map(Number);
+const weather = process.argv[4] || '';
 const s = await open({ width: 1280, height: 720 });
-await s.eval(() => { KOI.set('letterbox', true); });
+await s.eval((w) => { KOI.set('letterbox', true); if (w) { setWeather(w, true); updateEnvironment(true); } }, weather);
 for (const i of list) {
   await s.eval((i) => { KOI.tour(i, 0.45); KOI.frames(2); }, i);
   await s.page.waitForTimeout(1300);
