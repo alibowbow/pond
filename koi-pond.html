@@ -1,26 +1,36 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Koi Pond Garden</title>
+<title>달못 · Dalmot</title>
+<meta name="description" content="달못: 비단잉어가 노니는 한국 정원 연못을 브라우저에서 실시간으로 그린 작품">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&display=swap">
 <style>
 :root {
-  --glass: rgba(20, 24, 28, 0.42);
-  --glass-strong: rgba(18, 21, 25, 0.62);
-  --sheen: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02) 42%, rgba(255,255,255,0));
-  --line: rgba(255, 255, 255, 0.14);
-  --line-soft: rgba(255, 255, 255, 0.08);
-  --text: #eef1f2;
-  --muted: rgba(238, 241, 242, 0.62);
-  --accent: #f0894c;
-  --blur: blur(20px) saturate(1.6);
-  --radius: 14px;
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  /* 먹 (ink) glass, 청록 (jade) accent, 한지 (paper) text; the 오방색 band marks titled cards */
+  --glass: rgba(12, 21, 20, 0.48);
+  --glass-strong: rgba(10, 18, 17, 0.66);
+  --sheen: linear-gradient(180deg, rgba(241,234,216,0.08), rgba(241,234,216,0.015) 42%, rgba(241,234,216,0));
+  --line: rgba(214, 232, 222, 0.15);
+  --line-soft: rgba(214, 232, 222, 0.08);
+  --text: #f1ede2;
+  --muted: rgba(241, 237, 226, 0.6);
+  --accent: #6fc6ae;
+  --accent-rgb: 111, 198, 174;
+  --accent-deep: #2f8f7b;
+  --moon: #f3e6bf;
+  --obang: linear-gradient(90deg, #2d6fa8 0 20%, #c4402f 20% 40%, #e2b13c 40% 60%, #f3efe4 60% 80%, #1c1c1c 80%);
+  --blur: blur(18px) saturate(1.35);
+  --radius: 8px;
+  --serif: "Gowun Batang", "Nanum Myeongjo", "AppleMyungjo", "Batang", "Noto Serif KR", serif;
+  --sans: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", var(--sans);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0e11; color: var(--text);
-  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #0a0f0f; color: var(--text);
+  font: 13px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
 canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
 .glass { background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
@@ -28,21 +38,24 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 .glass::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--sheen); pointer-events: none; }
 
 #loader { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 40%, #1b2a2c 0%, #0b0e11 70%); transition: opacity 0.8s ease; }
+  background: radial-gradient(ellipse at 50% 34%, #16302b 0%, #0a0f0f 68%); transition: opacity 0.8s ease; }
+#loader .moon { position: relative; width: 84px; height: 84px; border-radius: 50%; margin-bottom: 26px; overflow: hidden;
+  background: radial-gradient(circle at 38% 34%, #fffaf0 0%, var(--moon) 46%, #cdb98a 100%); box-shadow: 0 0 46px rgba(243, 230, 191, 0.22); }
+#loader .moon i { position: absolute; inset: -1px; border-radius: 50%; background: #0d1715; transform: translateX(calc(var(--p, 0) * 104%)); transition: transform 0.3s ease; }
 #loader.done { opacity: 0; pointer-events: none; }
-#loader .lt { font-family: var(--serif); font-size: 30px; letter-spacing: 0.04em; margin-bottom: 6px; }
-#loader .lj { font-family: var(--serif); font-size: 15px; color: var(--muted); letter-spacing: 0.3em; margin-bottom: 26px; }
-#loader .bar { width: min(320px, 70vw); height: 3px; border-radius: 3px; background: rgba(255,255,255,0.1); overflow: hidden; }
-#loader .bar i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #f6b98f, var(--accent)); transition: width 0.25s ease; }
-#loader .ls { margin-top: 12px; color: var(--muted); font-size: 12px; min-height: 16px; }
+#loader .lt { font-family: var(--serif); font-weight: 700; font-size: 38px; letter-spacing: 0.18em; margin: 0 0 8px 0.18em; }
+#loader .lj { font-family: var(--serif); font-size: 15px; color: var(--muted); letter-spacing: 0.12em; }
+#loader .le { margin-top: 6px; font-size: 10.5px; color: var(--muted); letter-spacing: 0.42em; text-transform: uppercase; opacity: 0.8; }
+#loader .band { width: 64px; height: 3px; margin: 22px 0 12px; border-radius: 2px; background: var(--obang); opacity: 0.85; }
+#loader .ls { color: var(--muted); font-size: 12px; min-height: 16px; }
 
 #hud { position: fixed; left: 14px; top: 14px; z-index: 20; padding: 6px 11px; font: 600 12px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   letter-spacing: 0.02em; pointer-events: none; }
 #hud b { color: #fff; font-weight: 700; }
 #caption { position: fixed; left: 0; right: 0; bottom: 13vh; z-index: 15; text-align: center; pointer-events: none; opacity: 0; transform: translateY(8px); transition: opacity 1.2s ease, transform 1.2s ease; text-shadow: 0 2px 18px rgba(0,0,0,0.55); }
 #caption.on { opacity: 1; transform: translateY(0); }
-#caption .c1 { font-family: var(--serif); font-size: clamp(22px, 3.2vw, 40px); letter-spacing: 0.06em; font-weight: 400; }
-#caption .c2 { font-family: var(--serif); font-size: clamp(13px, 1.4vw, 17px); letter-spacing: 0.5em; color: rgba(255,255,255,0.72); margin-top: 6px; }
+#caption .c1 { font-family: var(--serif); font-size: clamp(24px, 3.4vw, 42px); letter-spacing: 0.14em; font-weight: 400; }
+#caption .c2 { font-family: var(--sans); font-size: clamp(10px, 1vw, 12.5px); letter-spacing: 0.42em; text-transform: uppercase; color: rgba(241,237,226,0.7); margin-top: 10px; }
 #toast { position: fixed; left: 50%; top: 18px; transform: translate(-50%, -12px); z-index: 30; padding: 8px 16px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.35s ease, transform 0.35s ease; white-space: nowrap; }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 #hud span { color: var(--muted); font-weight: 500; }
@@ -50,24 +63,24 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 #dock { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 22; display: flex; align-items: center; gap: 2px; padding: 5px;
   border-radius: 16px; transition: opacity 0.35s ease, transform 0.35s ease; }
 #dock button { appearance: none; -webkit-appearance: none; border: 0; margin: 0; background: transparent; color: var(--text); height: 38px; min-width: 38px; padding: 0 11px;
-  border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font: 500 12.5px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  border-radius: 11px; display: flex; align-items: center; justify-content: center; gap: 7px; font: 500 12.5px/1 var(--sans);
   letter-spacing: 0.01em; cursor: pointer; position: relative; white-space: nowrap; transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease; -webkit-tap-highlight-color: transparent; }
 #dock button:hover { background: rgba(255, 255, 255, 0.09); }
 #dock button:active { transform: translateY(1px); }
 #dock button:focus-visible { outline: 1.5px solid var(--accent); outline-offset: 1px; }
-#dock button.on { color: var(--accent); background: rgba(240, 137, 76, 0.13); }
+#dock button.on { color: var(--accent); background: rgba(var(--accent-rgb), 0.13); }
 #dock svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 #dock .sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; flex: none; }
-#dock button.primary { color: #23140a; font-weight: 650; background: linear-gradient(180deg, #f7a36f 0%, var(--accent) 55%, #e0763d 100%);
-  box-shadow: 0 6px 18px rgba(240, 137, 76, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45); margin-left: 3px; }
-#dock button.primary:hover { background: linear-gradient(180deg, #f9b181 0%, #f3955b 55%, #e5804a 100%); }
+#dock button.primary { color: #06231d; font-weight: 700; background: linear-gradient(180deg, #a6e3d1 0%, var(--accent) 55%, #3fa38b 100%);
+  box-shadow: 0 6px 18px rgba(var(--accent-rgb), 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.45); margin-left: 3px; }
+#dock button.primary:hover { background: linear-gradient(180deg, #b8ebdc 0%, #83d1bc 55%, #4cb099 100%); }
 #dock button.busy { opacity: 0.55; pointer-events: none; }
 #bSound .x { display: none; }
 #bSound.off .w { display: none; }
 #bSound.off .x { display: inline; }
 #bSound.off { color: var(--muted); }
 #dock [data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border-radius: 8px;
-  background: rgba(14, 17, 20, 0.86); border: 1px solid var(--line); color: var(--text); font: 500 11.5px/1.2 system-ui, sans-serif; pointer-events: none; white-space: nowrap; }
+  background: rgba(14, 17, 20, 0.86); border: 1px solid var(--line); color: var(--text); font: 500 11.5px/1.2 var(--sans); pointer-events: none; white-space: nowrap; }
 @media (max-width: 900px) {
   #dock .lbl { display: none; }
   #dock button { padding: 0 10px; }
@@ -80,30 +93,31 @@ canvas#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
 }
 
 /* ---------- guide card (top left, under the HUD) ---------- */
-#guide { position: fixed; left: 14px; top: 54px; z-index: 20; width: 262px; padding: 12px 12px 11px 14px; transition: opacity 0.3s ease, transform 0.3s ease; }
+#guide { position: fixed; left: 14px; top: 54px; z-index: 20; width: 262px; padding: 13px 12px 11px 14px; transition: opacity 0.3s ease, transform 0.3s ease; overflow: hidden; }
+#guide::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--obang); opacity: 0.8; }
 #guide .gh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-#guide .gt { font-family: var(--serif); font-size: 17px; letter-spacing: 0.03em; }
-#guide .gt small { font-size: 12px; color: var(--muted); letter-spacing: 0.25em; margin-left: 6px; }
+#guide .gt { font-family: var(--serif); font-weight: 700; font-size: 17px; letter-spacing: 0.12em; }
+#guide .gt small { font-family: var(--sans); font-weight: 400; font-size: 10px; color: var(--muted); letter-spacing: 0.3em; margin-left: 8px; }
 #guide button, #gOpen { appearance: none; -webkit-appearance: none; border: 0; background: rgba(255, 255, 255, 0.07); color: var(--text); cursor: pointer; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
-#guide button { width: 24px; height: 24px; font: 400 17px/1 system-ui, sans-serif; }
+#guide button { width: 24px; height: 24px; font: 400 17px/1 var(--sans); }
 #guide button:hover, #gOpen:hover { background: rgba(255, 255, 255, 0.16); }
 #guide ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 3px; }
 #guide li { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: rgba(238, 241, 242, 0.86); min-height: 22px; }
-#guide li .k { display: flex; gap: 3px; flex: none; width: 46px; }
+#guide li .k { display: flex; gap: 3px; flex: none; width: 50px; }
 kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 6px; font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--text); background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.07)); border: 1px solid rgba(255, 255, 255, 0.18); border-bottom-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35); }
 #guide .gf { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 11.5px; line-height: 1.5; }
 #guide .gf b { color: var(--text); font-weight: 600; }
-#gOpen { position: fixed; left: 14px; top: 54px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; font: 600 14px/1 system-ui, sans-serif; background: var(--glass);
+#gOpen { position: fixed; left: 14px; top: 54px; z-index: 20; width: 30px; height: 30px; border-radius: 50%; font: 600 14px/1 var(--sans); background: var(--glass);
   -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: 1px solid var(--line); }
 .hidden { display: none !important; }
 @media (max-width: 560px), (max-height: 520px) { #guide { width: 230px; } #guide .gf { display: none; } }
 
 /* ---------- dat.gui as a glass sheet (top right) ---------- */
 .koi-gui.dg.ac { z-index: 21; }
-.koi-gui .dg { color: var(--text); font: 12px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-shadow: none; }
+.koi-gui .dg { color: var(--text); font: 12px/1.3 var(--sans); text-shadow: none; }
 .koi-gui .dg.a { margin: 14px 16px 0 0; }
 .koi-gui .dg.main { width: min(300px, calc(100vw - 32px)) !important; background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
   border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -135,7 +149,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
   padding: 0 6px; font: 500 11px/20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-align: right; }
 .koi-gui .dg .cr.number input[type=text], .koi-gui .dg .cr.string input[type=text] { color: var(--text); }
 .koi-gui .dg .c input[type=text]:hover { background: rgba(255, 255, 255, 0.1); }
-.koi-gui .dg .c input[type=text]:focus { background: rgba(255, 255, 255, 0.14); border-color: rgba(240, 137, 76, 0.6); }
+.koi-gui .dg .c input[type=text]:focus { background: rgba(255, 255, 255, 0.14); border-color: rgba(var(--accent-rgb), 0.6); }
 .koi-gui .dg .has-slider input[type=text] { width: 30%; }
 /* thin sliders with knobs */
 .koi-gui .dg .c .slider { position: relative; float: left; width: 63%; height: 32px; margin: 0 0 0 1px; background: transparent; }
@@ -144,7 +158,7 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .koi-gui .dg .c .slider-fg::after { content: ""; position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: #fbfbfb;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); transition: transform 0.15s ease; }
 .koi-gui .dg .c .slider:hover { background: transparent; }
-.koi-gui .dg .c .slider:hover .slider-fg { background: #f59a61; }
+.koi-gui .dg .c .slider:hover .slider-fg { background: #8ad4c0; }
 .koi-gui .dg .c .slider:hover .slider-fg::after { transform: scale(1.15); }
 /* pill toggles */
 .koi-gui .dg .c input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 34px; height: 19px; margin: 6.5px 0 0; border-radius: 19px; position: relative; cursor: pointer;
@@ -155,10 +169,10 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .koi-gui .dg .c input[type=checkbox]:checked::after { transform: translateX(15px); }
 /* glass dropdowns */
 .koi-gui .dg .c select { appearance: none; -webkit-appearance: none; width: 100%; height: 24px; margin-top: 4px; padding: 0 26px 0 9px; border-radius: 8px; cursor: pointer;
-  color: var(--text); font: 500 12px/22px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; border: 1px solid var(--line);
+  color: var(--text); font: 500 12px/22px var(--sans); border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.07) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23c8cdd0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center; }
 .koi-gui .dg .c select:hover { background-color: rgba(255, 255, 255, 0.12); }
-.koi-gui .dg .c select:focus { outline: none; border-color: rgba(240, 137, 76, 0.6); }
+.koi-gui .dg .c select:focus { outline: none; border-color: rgba(var(--accent-rgb), 0.6); }
 .koi-gui .dg .c select option { background: #1b2025; color: #eef1f2; }
 /* sticky Close bar */
 .koi-gui .dg.main .close-button { position: relative !important; width: auto !important; height: 30px; line-height: 30px; opacity: 1; background: rgba(255, 255, 255, 0.05);
@@ -183,14 +197,14 @@ body.busy #pads * { pointer-events: none; }
 .stick .knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle at 38% 32%, rgba(255,255,255,0.5), rgba(255,255,255,0.2) 62%, rgba(255,255,255,0.12));
   border: 1px solid rgba(255,255,255,0.32); box-shadow: 0 4px 14px rgba(0,0,0,0.3); transition: transform 0.2s ease; }
-.stick.on .knob { transition: none; border-color: rgba(240,137,76,0.75); background: radial-gradient(circle at 38% 32%, rgba(255,214,190,0.6), rgba(240,137,76,0.32) 62%, rgba(240,137,76,0.2)); }
-.stick .sl { position: absolute; left: 0; right: 0; bottom: -19px; text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+.stick.on .knob { transition: none; border-color: rgba(var(--accent-rgb),0.75); background: radial-gradient(circle at 38% 32%, rgba(205,240,229,0.6), rgba(var(--accent-rgb),0.32) 62%, rgba(var(--accent-rgb),0.2)); }
+.stick .sl { position: absolute; left: 0; right: 0; bottom: -19px; text-align: center; font-size: 10.5px; letter-spacing: 0.2em;
   color: var(--muted); pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
 #zoom { position: fixed; right: calc(max(18px, env(safe-area-inset-right)) + 136px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 66px); z-index: 21;
   display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 26px; touch-action: none; user-select: none; -webkit-user-select: none; }
 #zoom button { appearance: none; -webkit-appearance: none; border: 0; margin: 0; background: transparent; color: var(--text); width: 42px; height: 42px; border-radius: 50%;
   display: grid; place-items: center; touch-action: none; cursor: pointer; }
-#zoom button.on { background: rgba(240,137,76,0.18); color: var(--accent); }
+#zoom button.on { background: rgba(var(--accent-rgb),0.18); color: var(--accent); }
 #zoom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 #zoom .zl { appearance: none; border: 0; background: transparent; color: var(--muted); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   height: 22px; width: 42px; padding: 0; }
@@ -203,47 +217,47 @@ body.test #toast { display: none; }
 </style>
 </head>
 <body>
-<div id="loader"><div class="lt">Koi Pond Garden</div><div class="lj">鯉 の 池</div><div class="bar"><i></i></div><div class="ls">Preparing…</div></div>
+<div id="loader"><div class="moon"><i></i></div><div class="lt">달못</div><div class="lj">달이 머무는 연못</div><div class="le">Dalmot · a Korean moon pond</div><div class="band"></div><div class="ls">준비하는 중…</div></div>
 <div id="hud" class="glass"><b id="fps">--</b> <span>fps</span> · <b id="ms">--</b> <span>ms</span></div>
 <div id="caption"><div class="c1"></div><div class="c2"></div></div>
 <div id="toast" class="glass"></div>
 <div id="guide" class="glass">
-  <div class="gh"><div class="gt">Guide<small>案内</small></div><button id="gClose" aria-label="Hide guide (I)" title="Hide guide (I)">×</button></div>
+  <div class="gh"><div class="gt">안내<small>GUIDE</small></div><button id="gClose" aria-label="안내 닫기 (I)" title="안내 닫기 (I)">×</button></div>
   <ul>
-    <li><span class="k"><kbd>C</kbd></span>Camera mode</li>
-    <li><span class="k"><kbd>P</kbd></span>Hold shot</li>
-    <li><span class="k"><kbd>O</kbd></span>Freeze time</li>
-    <li><span class="k"><kbd>V</kbd><kbd>Esc</kbd></span>Clean view</li>
-    <li><span class="k"><kbd>E</kbd></span>Feed the koi</li>
-    <li><span class="k"><kbd>G</kbd></span>Stroke a koi</li>
-    <li><span class="k"><kbd>K</kbd></span>Follow a koi (next fish)</li>
-    <li><span class="k"><kbd>T</kbd></span>Weather &amp; season</li>
-    <li><span class="k"><kbd>M</kbd></span>Mute / unmute</li>
-    <li><span class="k"><kbd>H</kbd></span>Settings panel</li>
-    <li><span class="k"><kbd>I</kbd></span>This guide</li>
+    <li><span class="k"><kbd>C</kbd></span>카메라 모드</li>
+    <li><span class="k"><kbd>P</kbd></span>장면 멈춤</li>
+    <li><span class="k"><kbd>O</kbd></span>시간 멈춤</li>
+    <li><span class="k"><kbd>V</kbd><kbd>Esc</kbd></span>화면만 보기</li>
+    <li><span class="k"><kbd>E</kbd></span>먹이 주기</li>
+    <li><span class="k"><kbd>G</kbd></span>잉어 쓰다듬기</li>
+    <li><span class="k"><kbd>K</kbd></span>잉어 따라가기 (다음 잉어)</li>
+    <li><span class="k"><kbd>T</kbd></span>날씨와 계절</li>
+    <li><span class="k"><kbd>M</kbd></span>소리 끄기 / 켜기</li>
+    <li><span class="k"><kbd>H</kbd></span>설정 창</li>
+    <li><span class="k"><kbd>I</kbd></span>이 안내</li>
   </ul>
-  <div class="gf">Drag or press a move key in any mode to take the camera.<br><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>&larr;</b>/<b>&rarr;</b> turn, <b>&uarr;</b>/<b>&darr;</b> forward/back, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed. Touch: one finger looks, two fingers slide, pinch to go forward.<br><b>First person</b> (touch screens) — left stick walks, right stick looks, <b>+</b>/<b>&minus;</b> or pinch to zoom; keyboard <b>WASD</b>, wheel or <b>+</b>/<b>&minus;</b> zoom.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
+  <div class="gf">어느 모드에서든 끌거나 이동 키를 누르면 카메라를 직접 잡아요.<br><b>자유 이동</b>: 끌어서 둘러보기, <b>WASD</b> 이동, <b>&larr;</b>/<b>&rarr;</b> 회전, <b>&uarr;</b>/<b>&darr;</b> 앞뒤, <b>Q</b>/<b>Space</b> 아래/위, <b>Shift</b> 빠르게, 휠로 속도 조절. 터치: 한 손가락으로 둘러보고, 두 손가락으로 밀고, 벌려서 앞으로.<br><b>걷기</b> (터치 화면): 왼쪽 스틱으로 걷고 오른쪽 스틱으로 둘러보기, <b>+</b>/<b>&minus;</b>나 벌려서 확대. 키보드는 <b>WASD</b>, 휠이나 <b>+</b>/<b>&minus;</b>로 확대.<br>물을 <b>누르면</b> 물결이 일고, 개구리를 누르면 뛰어올라요.</div>
 </div>
-<button id="gOpen" class="hidden" aria-label="Show guide (I)" title="Show guide (I)">?</button>
-<div id="dock" class="glass" role="toolbar" aria-label="Controls">
-  <button id="bCam" data-tip="Camera mode · C" aria-label="Camera mode (C)"><svg viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="M15.5 10.5l5.5-3v9l-5.5-3"/></svg><span class="lbl">Cinematic</span></button>
-  <button id="bHold" data-tip="Hold shot · P" aria-label="Hold shot (P)"><svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.5" height="14" rx="1"/><rect x="14" y="5" width="3.5" height="14" rx="1"/></svg><span class="lbl">Hold</span></button>
-  <button id="bFreeze" data-tip="Freeze time · O" aria-label="Freeze time (O)"><svg viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5s-4.5 4-4.5 8.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5"/></svg><span class="lbl">Freeze</span></button>
-  <button id="bClean" data-tip="Clean view · V" aria-label="Clean view (V)"><svg viewBox="0 0 24 24"><path d="M3.5 8V5.5a2 2 0 0 1 2-2H8M16 3.5h2.5a2 2 0 0 1 2 2V8M20.5 16v2.5a2 2 0 0 1-2 2H16M8 20.5H5.5a2 2 0 0 1-2-2V16"/><circle cx="12" cy="12" r="2.6"/></svg><span class="lbl">Clean</span></button>
-  <button id="bWeather" data-tip="Weather · T" aria-label="Weather (T)"><svg viewBox="0 0 24 24"><path d="M8.5 5V3.5M4.2 6.8l-1-1M13.8 6.8l1-1M3 11H1.5"/><path d="M5.6 12.4A3.6 3.6 0 1 1 12.3 9"/><path d="M8 19.5h9.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 8 19.5z"/></svg><span class="lbl">Sunny</span></button>
-  <button id="bSound" data-tip="Sound · M" aria-label="Sound (M)"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><g class="w"><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></g><g class="x"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg><span class="lbl">Sound</span></button>
+<button id="gOpen" class="hidden" aria-label="안내 보기 (I)" title="안내 보기 (I)">?</button>
+<div id="dock" class="glass" role="toolbar" aria-label="조작">
+  <button id="bCam" data-tip="카메라 모드 · C" aria-label="카메라 모드 (C)"><svg viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/><path d="M15.5 10.5l5.5-3v9l-5.5-3"/></svg><span class="lbl">영상</span></button>
+  <button id="bHold" data-tip="장면 멈춤 · P" aria-label="장면 멈춤 (P)"><svg viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.5" height="14" rx="1"/><rect x="14" y="5" width="3.5" height="14" rx="1"/></svg><span class="lbl">멈춤</span></button>
+  <button id="bFreeze" data-tip="시간 멈춤 · O" aria-label="시간 멈춤 (O)"><svg viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M7.5 3.5c0 4.5 4.5 5.5 4.5 8.5s-4.5 4-4.5 8.5M16.5 3.5c0 4.5-4.5 5.5-4.5 8.5s4.5 4 4.5 8.5"/></svg><span class="lbl">시간</span></button>
+  <button id="bClean" data-tip="화면만 보기 · V" aria-label="화면만 보기 (V)"><svg viewBox="0 0 24 24"><path d="M3.5 8V5.5a2 2 0 0 1 2-2H8M16 3.5h2.5a2 2 0 0 1 2 2V8M20.5 16v2.5a2 2 0 0 1-2 2H16M8 20.5H5.5a2 2 0 0 1-2-2V16"/><circle cx="12" cy="12" r="2.6"/></svg><span class="lbl">화면만</span></button>
+  <button id="bWeather" data-tip="날씨 · T" aria-label="날씨 (T)"><svg viewBox="0 0 24 24"><path d="M8.5 5V3.5M4.2 6.8l-1-1M13.8 6.8l1-1M3 11H1.5"/><path d="M5.6 12.4A3.6 3.6 0 1 1 12.3 9"/><path d="M8 19.5h9.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 8 19.5z"/></svg><span class="lbl">맑음</span></button>
+  <button id="bSound" data-tip="소리 · M" aria-label="소리 (M)"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><g class="w"><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></g><g class="x"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg><span class="lbl">소리</span></button>
   <span class="sep"></span>
-  <button id="bStroke" data-tip="Stroke a koi · G" aria-label="Stroke a koi (G)"><svg viewBox="0 0 24 24"><path d="M8 12.5V5.8a1.4 1.4 0 0 1 2.8 0v5.2M10.8 11V4.4a1.4 1.4 0 0 1 2.8 0V11M13.6 11V5.4a1.4 1.4 0 0 1 2.8 0V12M16.4 12V8.2a1.4 1.4 0 0 1 2.8 0v5.8a7 7 0 0 1-7 7h-.6a6.5 6.5 0 0 1-5.2-2.6L4 15.1a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><span class="lbl">Stroke a koi</span></button>
-  <button id="bFeed" class="primary" data-tip="Feed the koi · E" aria-label="Feed the koi (E)"><svg viewBox="0 0 24 24"><path d="M5 12c2.5-3.6 5.8-5.2 9-5.2 2.8 0 4.9 1.7 6.5 5.2-1.6 3.5-3.7 5.2-6.5 5.2-3.2 0-6.5-1.6-9-5.2z"/><path d="M5 12 2 8.8v6.4z"/><circle cx="16.6" cy="11" r="0.9" fill="currentColor" stroke="none"/></svg><span class="lbl">Feed the koi</span></button>
+  <button id="bStroke" data-tip="잉어 쓰다듬기 · G" aria-label="잉어 쓰다듬기 (G)"><svg viewBox="0 0 24 24"><path d="M8 12.5V5.8a1.4 1.4 0 0 1 2.8 0v5.2M10.8 11V4.4a1.4 1.4 0 0 1 2.8 0V11M13.6 11V5.4a1.4 1.4 0 0 1 2.8 0V12M16.4 12V8.2a1.4 1.4 0 0 1 2.8 0v5.8a7 7 0 0 1-7 7h-.6a6.5 6.5 0 0 1-5.2-2.6L4 15.1a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><span class="lbl">쓰다듬기</span></button>
+  <button id="bFeed" class="primary" data-tip="먹이 주기 · E" aria-label="먹이 주기 (E)"><svg viewBox="0 0 24 24"><path d="M5 12c2.5-3.6 5.8-5.2 9-5.2 2.8 0 4.9 1.7 6.5 5.2-1.6 3.5-3.7 5.2-6.5 5.2-3.2 0-6.5-1.6-9-5.2z"/><path d="M5 12 2 8.8v6.4z"/><circle cx="16.6" cy="11" r="0.9" fill="currentColor" stroke="none"/></svg><span class="lbl">먹이 주기</span></button>
 </div>
-<div id="pads" role="group" aria-label="Touch controls">
-  <div id="stMove" class="stick glass"><div class="knob"></div><span class="sl">Move</span></div>
+<div id="pads" role="group" aria-label="터치 조작">
+  <div id="stMove" class="stick glass"><div class="knob"></div><span class="sl">이동</span></div>
   <div id="zoom" class="glass">
-    <button id="zIn" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
-    <button id="zLbl" class="zl" aria-label="Reset zoom">1.0&times;</button>
-    <button id="zOut" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+    <button id="zIn" aria-label="확대"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
+    <button id="zLbl" class="zl" aria-label="확대 초기화">1.0&times;</button>
+    <button id="zOut" aria-label="축소"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
   </div>
-  <div id="stLook" class="stick glass"><div class="knob"></div><span class="sl">Look</span></div>
+  <div id="stLook" class="stick glass"><div class="knob"></div><span class="sl">시선</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
@@ -288,6 +302,18 @@ const WEATHER = {
             rain: 0, wet: 0, snow: 1, snowCover: 1, ice: 1, autumn: 0.75, wind: 0.2, exposure: 1.0, grade: [0.97, 1.0, 1.04], koi: 0.35 },
 };
 const WEATHER_NAMES = Object.keys(WEATHER);
+// what the page shows: Korean names for the internal keys
+const KO = {
+  weather: { Sunny: '맑음', Rain: '비', Autumn: '가을', Winter: '겨울' },
+  mode: { Cinematic: '영상', Manual: '자유 이동', 'First person': '걷기', 'Follow koi': '따라가기' },
+  quality: { High: '높음', Low: '낮음' },
+  // variety names as Korean koi keepers say them
+  koi: { Kohaku: '홍백', Sanke: '대정삼색', 'Yamabuki Ogon': '야마부키 황금', Showa: '소화삼색', 'Orenji Ogon': '오렌지 황금', Karasugoi: '카라스',
+    Tancho: '단정', Bekko: '별갑', Asagi: '아사기', Platinum: '백금', Chagoi: '차고이', 'Shiro Utsuri': '백사', 'Hi Utsuri': '비사', Kujaku: '공작',
+    'Doitsu Kohaku': '독일 홍백', Goshiki: '오색', Benigoi: '홍잉어', 'Ochiba Shigure': '오치바', },
+};
+const koOpts = (m) => Object.fromEntries(Object.entries(m).map(([k, v]) => [v, k]));   // dat.gui dropdowns: label -> key
+const koiName = (f) => (f.extra && f.extra.ginrin ? '은린 ' : '') + (KO.koi[f.variety] || f.variety);
 
 // Gerstner swell: wavelengths (m), base amplitudes (m), direction offsets from the wind (rad)
 const WAVE_LEN = [2.9, 1.6, 0.85, 0.42];
@@ -6005,7 +6031,7 @@ function setupInput() {
     if (CAM.mode === 'First person') { CAM.zoomT = clamp(CAM.zoomT * Math.pow(1.0015, -e.deltaY), ZOOM.min, ZOOM.max); return; }   // walking: the wheel zooms
     camState.speed = clamp(camState.speed * Math.pow(1.0015, -e.deltaY), 0.2, 40);
     const now = performance.now();
-    if (now - speedToastT > 250) { speedToastT = now; toast('Move speed ' + camState.speed.toFixed(1) + ' m/s'); }
+    if (now - speedToastT > 250) { speedToastT = now; toast('이동 속도 ' + camState.speed.toFixed(1) + ' m/s'); }
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
     if (typing(e)) return;
@@ -6113,30 +6139,30 @@ function highestKoi() {
 }
 // each shot returns camera position and look target for normalised time u
 const SHOTS = [
-  { name: 'The garden from above', sub: '庭園', dur: 13, fn(u, s) { const a = lerp(2.2, 1.45, easeIO(u)); const r = lerp(12.5, 10, easeIO(u)); _cp.set(0.5 + Math.cos(a) * r, lerp(13.5, 8.5, easeIO(u)), -1 + Math.sin(a) * r); _ct.set(0.5, 0, -1.4); } },
-  { name: 'The koi pond', sub: '鯉の池', dur: 11, fn(u) { _cp.set(lerp(-2.5, 1.8, easeIO(u)), lerp(2.6, 2.1, u), lerp(9.8, 8.6, u)); _ct.set(lerp(-0.6, 0.6, u), -0.2, -0.6); } },
-  { name: 'Koi', sub: '錦鯉', dur: 11, start(s) { s.subject = highestKoi(); }, fn(u, s) {
+  { name: '하늘에서 본 정원', sub: 'The garden from above', dur: 13, fn(u, s) { const a = lerp(2.2, 1.45, easeIO(u)); const r = lerp(12.5, 10, easeIO(u)); _cp.set(0.5 + Math.cos(a) * r, lerp(13.5, 8.5, easeIO(u)), -1 + Math.sin(a) * r); _ct.set(0.5, 0, -1.4); } },
+  { name: '연못', sub: 'The pond', dur: 11, fn(u) { _cp.set(lerp(-2.5, 1.8, easeIO(u)), lerp(2.6, 2.1, u), lerp(9.8, 8.6, u)); _ct.set(lerp(-0.6, 0.6, u), -0.2, -0.6); } },
+  { name: '비단잉어', sub: 'Koi', dur: 11, start(s) { s.subject = highestKoi(); }, fn(u, s) {
       const f = s.subject || FISH[0];
       const back = new THREE.Vector3(-Math.cos(f.heading), 0, Math.sin(f.heading));
       _ct.set(f.pos.x, f.pos.y, f.pos.z);
       const side = new THREE.Vector3(-back.z, 0, back.x);
       _cp.set(f.pos.x + back.x * (0.45 + f.size * 0.9) + side.x * 0.35, WATER_Y + 0.45 + f.size * 0.55, f.pos.z + back.z * (0.45 + f.size * 0.9) + side.z * 0.35);
     } },
-  { name: 'Sacred lotus', sub: '蓮', dur: 10, fn(u) { const a = lerp(-0.4, 0.5, easeIO(u)); _cp.set(4.95 + Math.cos(a) * 2.1, lerp(0.75, 1.05, u), 0.55 + Math.sin(a) * 2.1 + 0.3); _ct.set(4.95, 0.55, 0.45); } },
-  { name: 'Bamboo grove', sub: '竹林', dur: 12, fn(u) { _cp.set(lerp(-9.5, -10.3, u), lerp(1.3, 2.4, easeIO(u)), lerp(-2.6, -3.7, u)); _ct.set(-11.6, lerp(3.0, 6.0, easeIO(u)), -6.8); } },
-  { name: 'Weeping cherry', sub: '枝垂れ桜', dur: 10, fn(u) { _cp.set(lerp(-3.4, -4.6, easeIO(u)), lerp(1.3, 1.6, u), lerp(-0.6, -1.6, easeIO(u))); _ct.set(-7.1, lerp(1.9, 2.3, u), -3.3); } },
-  { name: 'Cherry blossom', sub: '桜', dur: 11, fn(u) { const a = lerp(2.0, 3.0, easeIO(u)); _cp.set(7.7 + Math.cos(a) * 5.2, lerp(1.6, 2.4, u), 4.2 + Math.sin(a) * 5.2); _ct.set(7.7, 2.6, 4.2); } },
-  { name: 'Pond frog', sub: '蛙', dur: 10, fn(u) {
+  { name: '연꽃', sub: 'Lotus', dur: 10, fn(u) { const a = lerp(-0.4, 0.5, easeIO(u)); _cp.set(4.95 + Math.cos(a) * 2.1, lerp(0.75, 1.05, u), 0.55 + Math.sin(a) * 2.1 + 0.3); _ct.set(4.95, 0.55, 0.45); } },
+  { name: '대숲', sub: 'Bamboo grove', dur: 12, fn(u) { _cp.set(lerp(-9.5, -10.3, u), lerp(1.3, 2.4, easeIO(u)), lerp(-2.6, -3.7, u)); _ct.set(-11.6, lerp(3.0, 6.0, easeIO(u)), -6.8); } },
+  { name: '수양벚나무', sub: 'Weeping cherry', dur: 10, fn(u) { _cp.set(lerp(-3.4, -4.6, easeIO(u)), lerp(1.3, 1.6, u), lerp(-0.6, -1.6, easeIO(u))); _ct.set(-7.1, lerp(1.9, 2.3, u), -3.3); } },
+  { name: '벚꽃', sub: 'Cherry blossom', dur: 11, fn(u) { const a = lerp(2.0, 3.0, easeIO(u)); _cp.set(7.7 + Math.cos(a) * 5.2, lerp(1.6, 2.4, u), 4.2 + Math.sin(a) * 5.2); _ct.set(7.7, 2.6, 4.2); } },
+  { name: '참개구리', sub: 'Pond frog', dur: 10, fn(u) {
       const g = FROG.group ? FROG.group.position : new THREE.Vector3(-4.4, 0, -2.2);
       const a = lerp(0.9, 1.5, easeIO(u));
       _cp.set(g.x + Math.cos(a) * 0.55, WATER_Y + 0.16, g.z + Math.sin(a) * 0.55); _ct.set(g.x, g.y + 0.03, g.z);
     } },
-  { name: 'Yellow-bellied slider', sub: '亀', dur: 9, fn(u) {
+  { name: '연못 거북', sub: 'Slider turtle', dur: 9, fn(u) {
       const p = TURTLE.pos, a = lerp(0.3, 1.2, easeIO(u)) + TURTLE.yaw;
       _cp.set(p.x + Math.cos(a) * 1.1, Math.max(p.y + 0.45, WATER_Y + 0.25), p.z + Math.sin(a) * 1.1); _ct.set(p.x, p.y + 0.05, p.z);
     } },
-  { name: 'Beneath the surface', sub: '水中', dur: 13, under: true, fn(u) { _cp.set(lerp(-3.8, -1.2, easeIO(u)), lerp(-0.35, -0.55, u), lerp(1.6, 0.6, u)); _ct.set(lerp(-2.4, 0.4, u), -0.45, -2.2); } },
-  { name: 'The koi pond', sub: '鯉の池', dur: 11, fn(u) { _cp.set(lerp(3.6, 0.6, easeIO(u)), lerp(3.2, 2.4, u), lerp(10.2, 10.5, u)); _ct.set(0, -0.3, 0); } },
+  { name: '물속', sub: 'Beneath the surface', dur: 13, under: true, fn(u) { _cp.set(lerp(-3.8, -1.2, easeIO(u)), lerp(-0.35, -0.55, u), lerp(1.6, 0.6, u)); _ct.set(lerp(-2.4, 0.4, u), -0.45, -2.2); } },
+  { name: '다시, 연못', sub: 'Back to the pond', dur: 11, fn(u) { _cp.set(lerp(3.6, 0.6, easeIO(u)), lerp(3.2, 2.4, u), lerp(10.2, 10.5, u)); _ct.set(0, -0.3, 0); } },
 ];
 function cinematicUpdate(dtReal) {
   const shots = SHOTS.filter((s) => !(s.under && P.stayAbove));
@@ -6192,9 +6218,9 @@ function setCamMode(m) {
   if (m !== 'Cinematic') { CAM.fade = 0; hideCaption(); }
   if (m === 'Cinematic' || m === 'Follow koi') CAM.zoomT = 1;
   const touch = document.body.classList.contains('touch');
-  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD or arrows to move'
-    : m === 'First person' ? (touch ? 'First person — left stick walks, right stick looks' : 'First person — WASD walks, drag to look, wheel zooms')
-    : 'Following ' + FISH[CAM.follow].variety, m === 'Manual' || m === 'First person' ? 3200 : 2200);
+  toast(m === 'Cinematic' ? '영상 투어' : m === 'Manual' ? '자유 이동: 끌어서 둘러보고 WASD나 화살표로 움직여요'
+    : m === 'First person' ? (touch ? '걷기: 왼쪽 스틱으로 걷고 오른쪽 스틱으로 둘러봐요' : '걷기: WASD로 걷고 끌어서 둘러보고 휠로 확대해요')
+    : koiName(FISH[CAM.follow]) + ' 따라가는 중', m === 'Manual' || m === 'First person' ? 3200 : 2200);
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 function updateCamera(dtReal, dt) {
@@ -7383,7 +7409,7 @@ function startFeed() {
   const alive = FEED.pellets.length;
   if (HAND.on && HAND.mode === 'feed' && FEED.phase === 'rub') { FEED.toRelease = Math.min(FEED.toRelease + 25, PELLET_MAX - alive + FEED.released); return; }
   if (HAND.on) return;
-  if (alive > PELLET_MAX - 20) { toast('Plenty of food on the water already'); return; }
+  if (alive > PELLET_MAX - 20) { toast('물 위에 먹이가 벌써 넉넉해요'); return; }
   CAM.resumeWalk = CAM.mode === 'First person';
   FEED.on = true; FEED.t = 0; FEED.released = 0; FEED.relAcc = 0; FEED.quietT = 0;
   FEED.toRelease = Math.min(50 + Math.floor(Math.random() * 20), PELLET_MAX - alive);
@@ -7397,7 +7423,7 @@ function startFeed() {
   HAND.cp.set(0.36, -0.46, -0.24); HAND.cv.set(0, 0, 0); HAND.ce.set(0.34, -0.62, 0.05);
   handFeedOrient(HAND.cq, 0);
   copyPose(HAND.pose, HAND_POSES.reach);
-  toast('Feeding the koi');
+  toast('잉어에게 먹이를 주는 중');
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 // camera-space palm orientation for feeding: fingers forward-left-down, back of the hand up, thumb toward the centre
@@ -7701,7 +7727,7 @@ function startStroke() {
   CAM.resumeWalk = CAM.mode === 'First person';
   const spot = chooseStrokeSpot();
   const fish = spot && chooseStrokeFish(spot);
-  if (!fish) { toast('No koi close enough to stroke right now'); return; }
+  if (!fish) { toast('지금은 쓰다듬을 만큼 가까운 잉어가 없어요'); return; }
   STROKE.on = true; STROKE.phase = 'lean'; STROKE.t = 0; STROKE.fish = fish; STROKE.spot = spot; STROKE.n = 0; STROKE.roll = 0; STROKE.userT = 0; STROKE.drag = false; STROKE.ended = 0;
   camMoveTo(spot.cam, spot.look, 2.4);
   // head toward the camera's right so the hand strokes from its shoulder, nose to tail
@@ -7715,7 +7741,7 @@ function startStroke() {
   STROKE.rollSign = Math.sign(Math.sin(heading) * (spot.cam.x - spot.lx) + Math.cos(heading) * (spot.cam.z - spot.lz)) || 1;
   OBSTACLES.push(STROKE.obstacle = { x: spot.lx, z: spot.lz, r: 0.42, top: 0.5, bottom: -2, stroke: true });
   HAND.on = false; HAND.mode = 'stroke';
-  toast('A ' + fish.variety + ' comes to be stroked — drag along it');
+  toast(koiName(fish) + '가 다가와요. 등을 따라 끌어 보세요');
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 // the docked koi: glides in on a Hermite path, then hovers alongside with its back just under the surface
@@ -8089,7 +8115,7 @@ function setWeather(name, instant = false) {
   const w = WEATHER[name];
   P.tod = w.tod; P.wind = w.wind;
   if (instant) blendWeather(1e9);
-  toast('Weather — ' + name);
+  toast('날씨: ' + (KO.weather[name] || name));
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 function blendWeather(dt) {
@@ -8177,7 +8203,7 @@ function autoQuality(realDt) {
   if (now - QA.lastAlloc < 1200) return;
   if (QA.slowT > 0.8) {
     if (resScale > 0.62) { resScale = Math.max(0.6, resScale - 0.1); QA.lastAlloc = now; QA.slowT = 0; allocTargets(); }
-    else if (P.quality === 'High') { QA.lastAlloc = now; QA.slowT = 0; resScale = 1; setQuality('Low'); toast('Quality — Low'); }   // Low already renders at 1x
+    else if (P.quality === 'High') { QA.lastAlloc = now; QA.slowT = 0; resScale = 1; setQuality('Low'); toast('화질: 낮음'); }   // Low already renders at 1x
   } else if (QA.fastT > 3) {
     if (resScale < 0.99) { resScale = Math.min(1, resScale + 0.1); QA.lastAlloc = now; QA.fastT = 0; allocTargets(); }
     else if (P.quality === 'Low' && QA.fastT > 6) { QA.lastAlloc = now; QA.fastT = 0; resScale = 0.7; setQuality('High'); }   // step back up gently
@@ -8193,63 +8219,63 @@ const UI = { clean: false, guide: true, panel: true, controllers: [] };
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } }
 const CLOSEUPS = {
-  'Koi from above': () => { const f = highestKoi(); KOI.view([f.pos.x + 0.05, WATER_Y + 1.1, f.pos.z + 0.05], [f.pos.x, f.pos.y, f.pos.z]); },
-  'Lotus': () => KOI.view([6.3, 1.0, 2.4], [4.9, 0.4, 0.45]),
-  'Frog': () => { const g = FROG.group.position; KOI.view([g.x + 0.45, WATER_Y + 0.16, g.z + 0.3], [g.x, g.y + 0.03, g.z]); },
-  'Slider': () => { const p = TURTLE.pos; KOI.view([p.x + 0.8, p.y + 0.35, p.z + 0.6], [p.x, p.y + 0.05, p.z]); },
-  'Waterfall': () => KOI.view([-0.3, 1.2, -2.2], [-0.35, 0.6, -5.2]),
-  'Bridge': () => KOI.view([-1.2, 1.3, 1.2], [2.6, 0.5, -0.9]),
-  'Lantern': () => KOI.view([-0.6, 1.4, 8.2], [-2.0, 1.0, 5.9]),
-  'Underwater': () => KOI.view([-1.5, -0.55, 1.5], [-2.5, -0.5, -2.5]),
+  '위에서 본 잉어': () => { const f = highestKoi(); KOI.view([f.pos.x + 0.05, WATER_Y + 1.1, f.pos.z + 0.05], [f.pos.x, f.pos.y, f.pos.z]); },
+  '연꽃': () => KOI.view([6.3, 1.0, 2.4], [4.9, 0.4, 0.45]),
+  '개구리': () => { const g = FROG.group.position; KOI.view([g.x + 0.45, WATER_Y + 0.16, g.z + 0.3], [g.x, g.y + 0.03, g.z]); },
+  '거북': () => { const p = TURTLE.pos; KOI.view([p.x + 0.8, p.y + 0.35, p.z + 0.6], [p.x, p.y + 0.05, p.z]); },
+  '폭포': () => KOI.view([-0.3, 1.2, -2.2], [-0.35, 0.6, -5.2]),
+  '다리': () => KOI.view([-1.2, 1.3, 1.2], [2.6, 0.5, -0.9]),
+  '석등': () => KOI.view([-0.6, 1.4, 8.2], [-2.0, 1.0, 5.9]),
+  '물속': () => KOI.view([-1.5, -0.55, 1.5], [-2.5, -0.5, -2.5]),
 };
 function buildGUI() {
   if (!window.dat) return;
-  dat.GUI.TEXT_CLOSED = 'Close'; dat.GUI.TEXT_OPEN = 'Settings';
+  dat.GUI.TEXT_CLOSED = '닫기'; dat.GUI.TEXT_OPEN = '설정';
   gui = new dat.GUI({ width: 300, hideable: false });
   gui.domElement.parentElement.classList.add('koi-gui');
   const add = (f, ...a) => { const c = f.add(...a); UI.controllers.push(c); return c; };
-  const env1 = gui.addFolder('Environment');
-  add(env1, P, 'weather', WEATHER_NAMES).name('Weather').onChange((v) => setWeather(v));
-  add(env1, P, 'tod', 6, 19, 0.05).name('Time of day');
-  add(env1, P, 'azimuth', 0, 360, 1).name('Sun azimuth');
-  add(env1, P, 'wind', 0, 1, 0.01).name('Wind');
-  add(env1, P, 'windDir', 0, 360, 1).name('Wind direction');
-  const wat = gui.addFolder('Water');
-  add(wat, P, 'clarity', 0.4, 3, 0.01).name('Clarity');
-  add(wat, P, 'waveHeight', 0, 2, 0.01).name('Wave height');
-  add(wat, P, 'caustics', 0, 2, 0.01).name('Caustics');
-  const koi = gui.addFolder('Koi');
-  add(koi, P, 'fishCount', 0, MAX_KOI, 1).name('Fish');
-  add(koi, { feed: () => startFeed() }, 'feed').name('Feed the koi').__li.classList.add('accent');
-  const ren = gui.addFolder('Rendering');
-  add(ren, P, 'quality', ['High', 'Low']).name('Quality').onChange((v) => setQuality(v));
-  add(ren, P, 'autoDrop').name('Auto-drop');
-  add(ren, P, 'exposure', 0.3, 2, 0.01).name('Exposure');
-  add(ren, P, 'bloom', 0, 1, 0.01).name('Bloom');
-  add(ren, P, 'bloomThreshold', 0.2, 3, 0.01).name('Bloom threshold');
-  add(ren, P, 'ssao', 0, 2, 0.01).name('SSAO');
-  add(ren, P, 'godRays', 0, 2, 0.01).name('God rays');
-  add(ren, P, 'grain', 0, 0.05, 0.001).name('Grain');
-  add(ren, P, 'vignette', 0, 1, 0.01).name('Vignette');
-  add(ren, P, 'sharpen', 0, 1, 0.01).name('Sharpening');
-  const lens = gui.addFolder('Lens');
-  add(lens, P, 'dof').name('Depth of field');
-  add(lens, P, 'fstop', 1.4, 22, 0.1).name('f-stop');
-  add(lens, P, 'maxBokeh', 2, 30, 0.5).name('Max bokeh');
-  const cam = gui.addFolder('Camera');
-  add(cam, P, 'tour').name('Film tour').onChange((v) => setCamMode(v ? 'Cinematic' : 'Manual'));
-  add(cam, P, 'letterbox').name('Letterbox');
-  add(cam, P, 'seasonLoop').name('Season each loop');
-  add(cam, P, 'camMode', ['Cinematic', 'Manual', 'First person', 'Follow koi']).name('Mode').onChange((v) => setCamMode(v));
-  add(cam, P, 'followFish', 0, MAX_KOI - 1, 1).name('Follow').onChange((v) => { CAM.follow = v; });
-  add(cam, P, 'pathSpeed', 0.2, 3, 0.01).name('Path speed');
-  add(cam, P, 'stayAbove').name('Stay above water');
-  add(cam, P, 'hold').name('Hold shot').onChange(() => syncDock());
-  add(cam, P, 'freeze').name('Freeze time').onChange(() => syncDock());
-  add(cam, P, 'clean').name('Clean view').onChange((v) => setClean(v));
-  add(cam, P, 'volume', 0, 1, 0.01).name('Volume');
-  add(cam, P, 'sound').name('Sound').onChange((v) => { AUDIO.start(); AUDIO.setMuted(!v); });
-  const cu = gui.addFolder('Close-ups');
+  const env1 = gui.addFolder('환경');
+  add(env1, P, 'weather', koOpts(KO.weather)).name('날씨').onChange((v) => setWeather(v));
+  add(env1, P, 'tod', 6, 19, 0.05).name('시각');
+  add(env1, P, 'azimuth', 0, 360, 1).name('해의 방위');
+  add(env1, P, 'wind', 0, 1, 0.01).name('바람');
+  add(env1, P, 'windDir', 0, 360, 1).name('바람 방향');
+  const wat = gui.addFolder('물');
+  add(wat, P, 'clarity', 0.4, 3, 0.01).name('맑기');
+  add(wat, P, 'waveHeight', 0, 2, 0.01).name('물결 높이');
+  add(wat, P, 'caustics', 0, 2, 0.01).name('물빛 무늬');
+  const koi = gui.addFolder('비단잉어');
+  add(koi, P, 'fishCount', 0, MAX_KOI, 1).name('마릿수');
+  add(koi, { feed: () => startFeed() }, 'feed').name('먹이 주기').__li.classList.add('accent');
+  const ren = gui.addFolder('렌더링');
+  add(ren, P, 'quality', koOpts(KO.quality)).name('화질').onChange((v) => setQuality(v));
+  add(ren, P, 'autoDrop').name('자동 화질 조절');
+  add(ren, P, 'exposure', 0.3, 2, 0.01).name('노출');
+  add(ren, P, 'bloom', 0, 1, 0.01).name('번짐');
+  add(ren, P, 'bloomThreshold', 0.2, 3, 0.01).name('번짐 기준');
+  add(ren, P, 'ssao', 0, 2, 0.01).name('그늘 (SSAO)');
+  add(ren, P, 'godRays', 0, 2, 0.01).name('물속 빛줄기');
+  add(ren, P, 'grain', 0, 0.05, 0.001).name('필름 입자');
+  add(ren, P, 'vignette', 0, 1, 0.01).name('비네트');
+  add(ren, P, 'sharpen', 0, 1, 0.01).name('선명도');
+  const lens = gui.addFolder('렌즈');
+  add(lens, P, 'dof').name('심도');
+  add(lens, P, 'fstop', 1.4, 22, 0.1).name('조리개 (f)');
+  add(lens, P, 'maxBokeh', 2, 30, 0.5).name('최대 보케');
+  const cam = gui.addFolder('카메라');
+  add(cam, P, 'tour').name('영상 투어').onChange((v) => setCamMode(v ? 'Cinematic' : 'Manual'));
+  add(cam, P, 'letterbox').name('레터박스');
+  add(cam, P, 'seasonLoop').name('한 바퀴마다 계절');
+  add(cam, P, 'camMode', koOpts(KO.mode)).name('모드').onChange((v) => setCamMode(v));
+  add(cam, P, 'followFish', 0, MAX_KOI - 1, 1).name('따라갈 잉어').onChange((v) => { CAM.follow = v; });
+  add(cam, P, 'pathSpeed', 0.2, 3, 0.01).name('투어 속도');
+  add(cam, P, 'stayAbove').name('물 위에만');
+  add(cam, P, 'hold').name('장면 멈춤').onChange(() => syncDock());
+  add(cam, P, 'freeze').name('시간 멈춤').onChange(() => syncDock());
+  add(cam, P, 'clean').name('화면만 보기').onChange((v) => setClean(v));
+  add(cam, P, 'volume', 0, 1, 0.01).name('음량');
+  add(cam, P, 'sound').name('소리').onChange((v) => { AUDIO.start(); AUDIO.setMuted(!v); });
+  const cu = gui.addFolder('가까이 보기');
   for (const [k, fn] of Object.entries(CLOSEUPS)) add(cu, { go: fn }, 'go').name(k);
   env1.open();
   if (window.innerWidth < 900) gui.close();
@@ -8259,13 +8285,13 @@ function syncDock() {
   const t = (id, on) => { const b = document.getElementById(id); if (b) b.classList.toggle('on', !!on); };
   t('bHold', P.hold); t('bFreeze', P.freeze); t('bClean', UI.clean);
   const s = document.getElementById('bSound'); if (s) s.classList.toggle('off', AUDIO.muted);
-  const m = document.getElementById('bCam'); if (m) m.querySelector('.lbl').textContent = CAM.mode === 'Follow koi' ? 'Follow' : CAM.mode === 'First person' ? 'Walk' : CAM.mode;
-  const w = document.getElementById('bWeather'); if (w) w.querySelector('.lbl').textContent = P.weather;
+  const m = document.getElementById('bCam'); if (m) m.querySelector('.lbl').textContent = KO.mode[CAM.mode] || CAM.mode;
+  const w = document.getElementById('bWeather'); if (w) w.querySelector('.lbl').textContent = KO.weather[P.weather] || P.weather;
 }
 function setClean(v) {
   UI.clean = v; P.clean = v;
   document.body.classList.toggle('clean', v);
-  if (v) toast('Clean view — press V or Esc to exit');
+  if (v) toast('화면만 보기: V나 Esc로 나가요');
   syncDock();
 }
 function setGuide(v) {
@@ -8276,7 +8302,7 @@ function setGuide(v) {
 function setPanel(v) { UI.panel = v; const el = gui && gui.domElement.parentElement; if (el) el.style.display = v ? '' : 'none'; }
 function cycleCam() { const modes = ['Cinematic', 'Manual', 'Follow koi', 'First person']; setCamMode(modes[(modes.indexOf(CAM.mode) + 1) % modes.length]); P.tour = CAM.mode === 'Cinematic'; }
 function cycleWeather() { setWeather(WEATHER_NAMES[(WEATHER_NAMES.indexOf(P.weather) + 1) % WEATHER_NAMES.length]); }
-function followNext() { if (CAM.mode !== 'Follow koi') { CAM.follow = P.followFish; setCamMode('Follow koi'); } else { CAM.follow = (CAM.follow + 1) % Math.max(P.fishCount, 1); P.followFish = CAM.follow; toast('Following ' + FISH[CAM.follow].variety); } P.tour = false; }
+function followNext() { if (CAM.mode !== 'Follow koi') { CAM.follow = P.followFish; setCamMode('Follow koi'); } else { CAM.follow = (CAM.follow + 1) % Math.max(P.fishCount, 1); P.followFish = CAM.follow; toast(koiName(FISH[CAM.follow]) + ' 따라가는 중'); } P.tour = false; }
 // touch sticks and zoom buttons (shown on touch screens, or with ?touch)
 function setupPads() {
   const body = document.body;
@@ -8343,8 +8369,8 @@ function setupUI() {
   if (TEST && !QS.has('ui')) { UI.clean = true; document.body.classList.add('clean', 'test'); }
   const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); AUDIO.start(); fn(); b.blur(); }); };
   on('bCam', cycleCam);
-  on('bHold', () => { P.hold = !P.hold; toast(P.hold ? 'Holding this shot' : 'Tour resumed'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
-  on('bFreeze', () => { P.freeze = !P.freeze; toast(P.freeze ? 'Time frozen' : 'Time flowing'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
+  on('bHold', () => { P.hold = !P.hold; toast(P.hold ? '이 장면에 머물러요' : '투어를 이어가요'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
+  on('bFreeze', () => { P.freeze = !P.freeze; toast(P.freeze ? '시간이 멈췄어요' : '시간이 흘러요'); syncDock(); if (window.GUI_REFRESH) GUI_REFRESH(); });
   on('bClean', () => setClean(!UI.clean));
   on('bWeather', cycleWeather);
   on('bSound', () => AUDIO.setMuted(!AUDIO.muted));
@@ -8363,8 +8389,8 @@ function setupUI() {
     if (k === 'Space') e.preventDefault();
     if (e.repeat) return;
     if (k === 'KeyC') cycleCam();
-    else if (k === 'KeyP') { P.hold = !P.hold; toast(P.hold ? 'Holding this shot' : 'Tour resumed'); }
-    else if (k === 'KeyO') { P.freeze = !P.freeze; toast(P.freeze ? 'Time frozen' : 'Time flowing'); }
+    else if (k === 'KeyP') { P.hold = !P.hold; toast(P.hold ? '이 장면에 머물러요' : '투어를 이어가요'); }
+    else if (k === 'KeyO') { P.freeze = !P.freeze; toast(P.freeze ? '시간이 멈췄어요' : '시간이 흘러요'); }
     else if (k === 'KeyV') setClean(!UI.clean);
     else if (k === 'Escape') { if (UI.clean) setClean(false); }
     else if (k === 'KeyE') startFeed();
@@ -8452,7 +8478,7 @@ function resize() {
 }
 function setLoader(frac, label) {
   const l = document.getElementById('loader');
-  l.querySelector('.bar i').style.width = (frac * 100).toFixed(1) + '%';
+  l.style.setProperty('--p', frac.toFixed(3));   // the moon waxes as the garden builds
   l.querySelector('.ls').textContent = label;
 }
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -8480,7 +8506,7 @@ async function runBench() {
     await wait(50);
   }
   P.autoDrop = keep.auto; resScale = 1; setQuality(keep.q);
-  const msg = `Benchmark at ${DPR.toFixed(1)}x DPR: High ${res.High} fps · Low ${res.Low} fps`;
+  const msg = `성능 측정 (${DPR.toFixed(1)}x DPR): 높음 ${res.High} fps · 낮음 ${res.Low} fps`;
   console.log(msg); toast(msg, 15000);
   window.KOI_BENCH = res;
 }
@@ -8693,22 +8719,22 @@ window.KOI = KOI;
 
 async function init() {
   const steps = [
-    ['Renderer', buildRenderer],
-    ['Textures', () => { makePebbleTextures(); makeMossTextures(); makeCausticTexture(); makeRockTextures(); makeWoodTextures(); makeWaterDetailTexture(); G.tCaustics.value = TEX.caustics; }],
-    ['Sky & light', buildSkyAndLights],
-    ['Pond outline', buildPondOutline],
-    ['Pond floor', buildFloorGrid],
-    ['Terrain', buildTerrain],
-    ['Stones', buildStones],
-    ['Bridge & pavilion', () => { buildBridge(); buildPavilion(); buildPier(); buildMountains(); }],
-    ['Trees & bamboo', buildTrees],
-    ['Water plants', () => { buildWaterPlants(); buildFalling(); }],
-    ['Pond life', buildPondLife],
-    ['Weather', buildPrecip],
-    ['Post-processing', buildPost],
-    ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
-    ['Koi', buildKoi],
-    ['Hands', () => { buildHand(); buildPellets(); }],
+    ['화면', buildRenderer],
+    ['질감', () => { makePebbleTextures(); makeMossTextures(); makeCausticTexture(); makeRockTextures(); makeWoodTextures(); makeWaterDetailTexture(); G.tCaustics.value = TEX.caustics; }],
+    ['하늘과 빛', buildSkyAndLights],
+    ['연못 윤곽', buildPondOutline],
+    ['연못 바닥', buildFloorGrid],
+    ['땅', buildTerrain],
+    ['돌', buildStones],
+    ['다리와 정자', () => { buildBridge(); buildPavilion(); buildPier(); buildMountains(); }],
+    ['나무와 대나무', buildTrees],
+    ['물풀', () => { buildWaterPlants(); buildFalling(); }],
+    ['연못 생물', buildPondLife],
+    ['날씨', buildPrecip],
+    ['후처리', buildPost],
+    ['물', () => { buildWaterSim(); buildWater(); allocTargets(); }],
+    ['비단잉어', buildKoi],
+    ['손', () => { buildHand(); buildPellets(); }],
   ];
   for (let i = 0; i < steps.length; i++) {
     setLoader(i / steps.length, steps[i][0] + '…');
@@ -8727,7 +8753,7 @@ async function init() {
   G.tRipple.value = null;
   updateWind(0);
   updateEnvironment(true);
-  setLoader(1, 'Compiling shaders…');
+  setLoader(1, '셰이더 준비하는 중…');
   await nextFrame();
   if (TEST && window.__reseed) window.__reseed();   // test runs: the simulation starts from the same random state whatever was built before
   step(1 / 60);
@@ -8743,7 +8769,7 @@ async function init() {
   else KOI.paused = true;
   if (QS.has('bench')) setTimeout(runBench, 1500);
 }
-init().catch((e) => { console.error(e); setLoader(0, 'Error: ' + e.message); });
+init().catch((e) => { console.error(e); setLoader(0, '오류: ' + e.message); });
 </script>
 </body>
 </html>
