@@ -320,12 +320,21 @@ const WAVE_LEN = [2.9, 1.6, 0.85, 0.42];
 const WAVE_AMP = [0.016, 0.011, 0.007, 0.004];
 const WAVE_OFF = [0, 0.45, -0.5, 0.95];
 
-// Pond outline control points (closed Catmull-Rom, metres, x east, z south)
-const POND_CTRL = [
-  [-6.0, -0.5], [-5.6, -2.6], [-4.3, -3.8], [-2.5, -4.1], [-1.1, -4.7], [0.4, -4.95], [1.6, -4.3],
-  [2.35, -2.95], [3.6, -2.75], [5.0, -3.35], [6.1, -2.25], [6.25, -0.4], [5.45, 1.35], [4.0, 2.0],
-  [2.85, 1.25], [1.6, 2.45], [0.2, 3.85], [-1.8, 4.3], [-3.8, 3.7], [-5.2, 2.3],
-];
+// Pond outline (metres, x east, z south): a near-square main pond (bangji) joined under the bridge by a short channel
+// to a long lotus pond (yeonji), with straight dressed-stone banks. Corners clockwise from the north-west; the
+// Catmull-Rom control points run along each straight edge and stop short of the corners, which round them slightly.
+const POND_POLY = [[-5.9, -4.8], [1.45, -4.8], [1.45, -2.5], [3.75, -2.5], [3.75, -3.0], [6.3, -3.0], [6.3, 2.0], [3.75, 2.0], [3.75, 0.8], [1.45, 0.8], [1.45, 3.9], [-5.9, 3.9]];
+const POND_CTRL = (() => {
+  const out = [], n = POND_POLY.length;
+  for (let i = 0; i < n; i++) {
+    const a = POND_POLY[i], b = POND_POLY[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L, r = Math.min(0.3, L * 0.3), m = Math.max(1, Math.round((L - 2 * r) / 0.9));
+    for (let k = 0; k <= m; k++) { const t = r + ((L - 2 * r) * k) / m; out.push([a[0] + dx * t, a[1] + dz * t]); }
+  }
+  return out;
+})();
+// the round island of the bangji-wondo pond: square earth, round heaven
+const ISLAND = { x: -2.2, z: -0.45, r: 1.2 };
 
 /* =====================================================================================
    1. MATH / NOISE UTILITIES
@@ -596,7 +605,7 @@ function makeWaterDetailTexture() {
   }
   TEX.waterDetail = dataTex(heightToNormal(hf, N, N, 7), N, N);
 }
-// Wood grain (for the bridge, pavilion, pier): rings and rays, tileable along the grain.
+// Wood grain (for the pavilion floor): rings and rays, tileable along the grain.
 function makeWoodTextures() {
   const N = 256;
   const col = new Uint8Array(N * N * 4), hf = new Float32Array(N * N);
@@ -1939,7 +1948,7 @@ function buildPondOutline() {
         if (d < dmin) dmin = d;
         if ((az[k] > pz) !== (az[l] > pz) && px < ((ax[l] - ax[k]) * (pz - az[k])) / (az[l] - az[k]) + ax[k]) inside = !inside;
       }
-      sdfGrid[j * SDF_N + i] = inside ? -dmin : dmin;
+      sdfGrid[j * SDF_N + i] = Math.max(inside ? -dmin : dmin, ISLAND.r - Math.hypot(px - ISLAND.x, pz - ISLAND.z));
     }
   }
 }
@@ -1976,14 +1985,15 @@ function pondMaxDepth(x, z) {
   return 1.22 - 0.34 * smoothstep(2.0, 4.6, x) + 0.07 * fbm2(x * 0.3, z * 0.3, 2, 8) - 0.12 * smoothstep(-2.5, -4.6, z) * smoothstep(-3.5, 0.5, x);
 }
 const RIM_H = 0.1;
-const BEACH = { x: -2.85, z: 4.05, r: 1.25 };   // suhama pebble beach on the south-west shore
-function beachW(x, z) { return Math.exp(-(sq(x - BEACH.x) + sq(z - BEACH.z) * 1.4) / (2 * BEACH.r * BEACH.r)); }
+// no pebble beach: the banks are dressed stone all round (the weight stays so the shaders and placement keep their inputs)
+function beachW() { return 0; }
 function terrainHeight(x, z) {
   const sd = pondSDF(x, z);
   const bw = beachW(x, z);
   if (sd >= 0) {
     const land = landHeight(x, z);
     let h = lerp(RIM_H, land, smoothstep(0.0, 1.5, sd)) + 0.02 * fbm2(x * 2.1, z * 2.1, 2, 9) * smoothstep(0.1, 0.6, sd);
+    h += 0.3 * smoothstep(ISLAND.r - 0.15, 0.1, Math.hypot(x - ISLAND.x, z - ISLAND.z));   // the island rises in a low mound
     if (bw > 0.001) h = lerp(h, lerp(0.03, land, smoothstep(0.0, 2.2, sd)) + sd * 0.05, bw);
     return h;
   }
@@ -2322,30 +2332,60 @@ function buildStones() {
     return { x: lerp(a[0], b[0], t), z: lerp(a[1], b[1], t), tx: tx / l, tz: tz / l };
   };
   const grad = new THREE.Vector2();
-  const skipCoping = (x, z) => beachW(x, z) > 0.2 || (x > -1.9 && x < 1.1 && z < -4.25);
-  let sArc = 0;
-  while (sArc < per - 0.35) {
-    const L = rr(0.36, 0.7);
-    const q = atArc(sArc + L / 2);
-    if (!skipCoping(q.x, q.z)) {
-      pondSDFGrad(q.x, q.z, grad);
-      const D = rr(0.36, 0.56), T = rr(0.26, 0.36), over = rr(0.04, 0.12);
-      const g = rockGeometry(seed++, L * 0.55, T * 0.5, D * 0.5, { flatTop: 0.66, square: 0.4, rough: 0.12, cuts: 5, segs: 22, rings: 10 });
-      const cx = q.x + grad.x * (D / 2 - over), cz = q.z + grad.y * (D / 2 - over);
-      placeGeom(g, cx, 0, cz, Math.atan2(-q.tz, q.tx), rr(-0.04, 0.04), rr(-0.04, 0.04));
-      const top = RIM_H + rr(0.035, 0.1);
-      g.translate(0, top - g.boundingBox.max.y, 0);
-      g.computeBoundingBox();
-      anchorToGround(g, T * 0.5, 0.06);
-      add(g, rockMat, true, true);
+  // banks: dressed long stones (jangdaeseok) in two courses, the top one a little proud of the water;
+  // none where the waterfall comes down or where the bridge abutments stand
+  const bridgeDist = (x, z) => { const ax = BRIDGE.a.x, az = BRIDGE.a.z, bx = BRIDGE.b.x - ax, bz = BRIDGE.b.z - az; const t = clamp(((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz), 0, 1); return Math.hypot(x - ax - bx * t, z - az - bz * t); };
+  const skipCoping = (x, z) => (x > -1.9 && x < 1.1 && z < -4.25) || bridgeDist(x, z) < BRIDGE.width / 2 + 0.25;
+  const ashlar = (L, H, D) => {
+    const g = keepAttrs(new THREE.BoxGeometry(L, H, D, 2, 1, 1), ['position', 'normal']);
+    const pp = g.attributes.position;
+    // softened arrises and a slightly uneven face; corners shared by faces move together
+    for (let i = 0; i < pp.count; i++) {
+      const x = pp.getX(i), y = pp.getY(i), z = pp.getZ(i), h = hash3i(Math.round(x * 997), Math.round(y * 991), Math.round(z * 983), seed);
+      pp.setXYZ(i, x + (fract(h * 13.1) - 0.5) * 0.02, y + (fract(h * 17.3) - 0.5) * 0.015, z + (fract(h * 19.7) - 0.5) * 0.02);
     }
-    sArc += L + rr(0.0, 0.045);
-  }
+    g.computeVertexNormals();
+    return g;
+  };
+  const course = (q, L, top, H, D, inset, rec) => {
+    pondSDFGrad(q.x, q.z, grad);
+    const g = ashlar(L, H, D);
+    const cx = q.x + grad.x * (D / 2 - 0.05 + inset), cz = q.z + grad.y * (D / 2 - 0.05 + inset);
+    placeGeom(g, cx, top - H / 2, cz, Math.atan2(-q.tz, q.tx));
+    add(g, rockMat, rec, rec);
+  };
+  const lay = (atArc, per) => {
+    let sArc = 0, k = 0;
+    while (sArc < per - 0.3) {
+      const L = Math.min(rr(0.75, 1.15), per - sArc);
+      const q = atArc(sArc + L / 2);
+      if (!skipCoping(q.x, q.z)) {
+        course(q, L - 0.012, RIM_H + 0.06, 0.3, 0.42, 0, true);
+        const q2 = atArc(sArc + L / 2 + (k % 2 ? 0.3 : -0.3));
+        course(q2, L - 0.012, RIM_H - 0.245, 0.36, 0.42, 0.03, false);
+      }
+      sArc += L; k++;
+    }
+  };
+  lay(atArc, per);
+  // the island's ring of curved courses
+  const isl = (sArc) => { const a = sArc / ISLAND.r; return { x: ISLAND.x + Math.cos(a) * ISLAND.r, z: ISLAND.z + Math.sin(a) * ISLAND.r, tx: -Math.sin(a), tz: Math.cos(a) }; };
+  const islandLay = () => {
+    const per = 2 * Math.PI * ISLAND.r;
+    let sArc = 0, k = 0;
+    while (sArc < per - 0.2) {
+      const L = Math.min(0.62, per - sArc);
+      course(isl(sArc + L / 2), L - 0.012, RIM_H + 0.06, 0.3, 0.36, 0, true);
+      course(isl(sArc + L / 2 + (k % 2 ? 0.2 : -0.2)), L - 0.012, RIM_H - 0.245, 0.36, 0.36, 0.03, false);
+      sArc += L; k++;
+    }
+  };
+  islandLay();
   // --- boulders: [x, z, sx, sy, sz, top, yaw, opts] (top = absolute top height) ---
   const B = [
     [TURTLE_ROCK.x, TURTLE_ROCK.z, 0.5, 0.5, 0.42, TURTLE_ROCK.top, 0.4, { flatTop: 0.7, square: 0.5 }], // basking rock
     [4.95, -1.65, 0.34, 0.45, 0.3, 0.36, 1.1, {}], [5.35, -1.12, 0.28, 0.25, 0.25, 0.08, 0.2, {}],
-    [-2.1, -1.1, 0.5, 0.3, 0.42, -0.62, 0.7, {}], [0.9, 0.35, 0.38, 0.25, 0.3, -0.78, 2.0, {}], [-4.2, 2.2, 0.3, 0.22, 0.26, -0.28, 1.3, {}],
+    [0.3, -2.4, 0.5, 0.3, 0.42, -0.62, 0.7, {}], [0.9, 0.35, 0.38, 0.25, 0.3, -0.78, 2.0, {}], [-4.2, 2.2, 0.3, 0.22, 0.26, -0.28, 1.3, {}],
     [-6.75, 2.25, 0.45, 0.42, 0.4, 0.55, 0.3, {}], [-7.0, -2.25, 0.55, 0.5, 0.45, 0.72, 1.7, {}], [3.35, 2.75, 0.4, 0.32, 0.36, 0.42, 0.9, {}],
     [6.95, -3.05, 0.5, 0.45, 0.42, 0.62, 2.4, {}], [6.95, 0.75, 0.32, 0.26, 0.3, 0.38, 0.1, {}], [-4.55, 4.95, 0.34, 0.24, 0.3, 0.28, 1.0, {}],
     [2.25, -5.45, 0.42, 0.36, 0.38, 0.62, 0.6, {}], [-2.5, -5.35, 0.4, 0.38, 0.36, 0.72, 2.2, {}], [4.6, 3.05, 0.3, 0.22, 0.26, 0.3, 0.4, {}],
@@ -2781,33 +2821,31 @@ function buildPavilion() {
   place(beams, danMat); place(floor, woodFloor); place(roofParts, roofMat);
   place(stone, lanternMat, true, PN);
 }
-// ---------- pier: a small wooden deck over the south shore ----------
-const PIER = { x: 0.85, z: 2.75, len: 2.3, width: 1.0, y: 0.3, yaw: -0.18 };
+// ---------- gwaneodae: a granite platform for watching the fish, reaching out from the south bank ----------
+const PIER = { x: -0.85, z: 3.3, len: 2.1, width: 1.1, y: 0.3, yaw: 0 };
 function buildPier() {
-  const deckM = woodMaterial(0xcdbfae, 0.82, 1.0), frameM = woodMaterial(0x958572, 0.72, 0.9);
-  const P0 = PIER, deck = [], frame = [], posts = [];
-  const n = Math.floor(P0.len / 0.16);
-  for (let i = 0; i < n; i++) deck.push(xform(plank(P0.width, 0.15, 0.045), 0, P0.y, -P0.len / 2 + (i + 0.5) * (P0.len / n), (hash1(i + 50) - 0.5) * 0.015));
-  for (const sx of [-1, 1]) frame.push(xform(plank(P0.len, 0.1, 0.14), sx * (P0.width / 2 - 0.05), P0.y - 0.095, 0, Math.PI / 2));
-  for (let k = 0; k < 3; k++) {
-    const lz = -P0.len / 2 + 0.12 + k * ((P0.len - 0.24) / 2);
-    frame.push(xform(plank(P0.width, 0.1, 0.1), 0, P0.y - 0.2, lz));
-    for (const sx of [-1, 1]) {
-      const lx = sx * (P0.width / 2 - 0.05);
-      const wx = P0.x + lx * Math.cos(P0.yaw) + lz * Math.sin(P0.yaw), wz = P0.z - lx * Math.sin(P0.yaw) + lz * Math.cos(P0.yaw);
-      const fl = terrainHeight(wx, wz) - 0.15, h = P0.y - fl;
-      posts.push(xform(plank(0.12, 0.12, h), lx, fl + h / 2, lz));
-      if (pondSDF(wx, wz) < 0) OBSTACLES.push({ x: wx, z: wz, r: 0.1, top: P0.y, bottom: fl });
-    }
+  const P0 = PIER, slabs = [], legs = [], T = 0.13, n = 3, gap = 0.014, w = (P0.width - gap * (n - 1)) / n;
+  // three long slabs side by side, resting on the bank's coping at the land end
+  for (let i = 0; i < n; i++) slabs.push(boxAt(w, T, P0.len, -P0.width / 2 + w / 2 + i * (w + gap), P0.y - T / 2 + (hash1(i + 50) - 0.5) * 0.008, 0));
+  // a footing where they meet the ground, and over the water a lintel on two square stone legs
+  slabs.push(boxAt(P0.width + 0.04, 0.22, 0.32, 0, P0.y - T - 0.11, P0.len / 2 - 0.17));
+  const lz = -P0.len / 2 + 0.24, lintelY = P0.y - T - 0.08;
+  slabs.push(boxAt(P0.width + 0.06, 0.16, 0.26, 0, lintelY, lz));
+  for (const sx of [-1, 1]) {
+    const lx = sx * (P0.width / 2 - 0.17);
+    const wx = P0.x + lx * Math.cos(P0.yaw) + lz * Math.sin(P0.yaw), wz = P0.z - lx * Math.sin(P0.yaw) + lz * Math.cos(P0.yaw);
+    const fl = terrainHeight(wx, wz) - 0.1, top = lintelY - 0.08, h = top - fl;
+    legs.push(boxAt(0.22, h, 0.22, lx, fl + h / 2, lz));
+    if (pondSDF(wx, wz) < 0) OBSTACLES.push({ x: wx, z: wz, r: 0.16, top: P0.y, bottom: fl });
   }
-  const place = (list, mat, layer) => {
-    const g = mergeGeoms(list.map((g) => keepAttrs(g, ['position', 'normal', 'uv'])));
+  const place = (list, layer) => {
+    const g = mergeGeoms(list);
     g.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(P0.x, 0, P0.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), P0.yaw), new THREE.Vector3(1, 1, 1)));
-    const m = new THREE.Mesh(g, mat);
+    const m = new THREE.Mesh(g, lanternMat);
     m.castShadow = true; m.receiveShadow = true; m.layers.set(layer);
     scene.add(m);
   };
-  place(deck, deckM, LAYER.ABOVE); place(frame, frameM, LAYER.ABOVE); place(posts, frameM, LAYER.BOTH);
+  place(slabs, LAYER.ABOVE); place(legs, LAYER.BOTH);
 }
 
 /* =====================================================================================
@@ -4079,6 +4117,7 @@ function buildTrees() {
   buildPine(ever, -4.9, 5.7, 81, new THREE.Vector3(0.42, 1, -0.3), 3.8);
   buildPine(ever, 4.0, -8.7, 82, new THREE.Vector3(-0.1, 1, 0.12), 4.4);
   buildPine(ever, -3.9, -7.6, 83, new THREE.Vector3(0.12, 1, 0.2), 3.4);
+  buildPine(ever, ISLAND.x + 0.15, ISLAND.z - 0.1, 84, new THREE.Vector3(0.35, 1, 0.12), 3.1);   // the island pine leans over the water
   // background broadleaf ring (keeps the view to the pond open)
   const R = mulberry32(99);
   const ring = [[-16, -10], [-19, -2], [-18, 6], [-12, 13], [-5, 16], [5, 17], [13, 13], [18, 6], [20, -3], [17, -11], [10, -15], [2, -16], [-7, -15], [-13, -13],
@@ -6258,11 +6297,11 @@ function updateManualCamera(dt) {
   applyCamRotation();
 }
 
-// ---------- first person: walk at eye height on the ground, the bridge and the pier; the pond itself is off limits ----------
+// ---------- first person: walk at eye height on the ground, the bridge and the stone platform; the pond itself is off limits ----------
 const WALK = { eye: 1.55, speed: 1.9, cx: 0.5, cz: -0.5, R: 20 };
 const STICK = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, zoomDir: 0 };   // touch sticks, -1..1 (screen axes)
 function walkDeck(x, z) {
-  // bridge deck (ramps included) and pier boards, or null
+  // bridge deck (ramps included) and the platform slabs, or null
   if (bridgeDeckY && BRIDGE.half) {
     const dx = x - BRIDGE.cx, dz = z - BRIDGE.cz;
     const lx = dx * Math.cos(BRIDGE.yaw) - dz * Math.sin(BRIDGE.yaw), lz = dx * Math.sin(BRIDGE.yaw) + dz * Math.cos(BRIDGE.yaw);
@@ -7536,7 +7575,7 @@ function pushPadsFromHand() {
     }
   }
 }
-// ---------- camera moves for the interactions (kneel on the pier, lean over the bank) ----------
+// ---------- camera moves for the interactions (kneel on the stone platform, lean over the bank) ----------
 const CAMX = { on: false, t: 0, dur: 2, arc: 0, p0: new THREE.Vector3(), p1: new THREE.Vector3(), q0: new THREE.Quaternion(), q1: new THREE.Quaternion() };
 const _cxm = new THREE.Matrix4(), _cxe = new THREE.Euler();
 function camMoveTo(pos, look, dur = 2.2) {
@@ -7568,9 +7607,9 @@ function updateCamTransition(dtReal) {
 // ---------- feeding: pellets rubbed from the fingers, koi racing up to take them ----------
 const FEED = { excite: 0, on: false, phase: 'idle', t: 0, pellets: [], landed: false, toRelease: 0, released: 0, relAcc: 0, plipT: 0, quietT: 0, eaten: 0, rub: 0, pinch: new THREE.Vector3(), pinchV: new THREE.Vector3(), pinchPrev: new THREE.Vector3() };
 const PELLET_MAX = 110;
-// kneeling places to feed from: the end of the pier and a few banks with deep water in front
+// kneeling places to feed from: the end of the stone platform and a few banks with deep water in front
 const FEED_SPOTS = [
-  { pos: [1.0, 0.95, 1.72], look: [0.85, -0.05, 0.1] },
+  { pos: [PIER.x, 0.95, PIER.z - PIER.len / 2 + 0.14], look: [PIER.x, -0.05, PIER.z - PIER.len / 2 - 1.6] },
 ];
 let pelletAir = null, pelletFloat = null;
 function buildPellets() {
