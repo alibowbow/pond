@@ -271,7 +271,7 @@ const P = {
   fishCount: 20,
   quality: 'High', autoDrop: true, exposure: 0.9, bloom: 0.3, bloomThreshold: 0.9, ssao: 1.0, godRays: 1.0,
   grain: 0.01, vignette: 0.32, sharpen: 0.35,
-  dof: true, fstop: 8, maxBokeh: 12,
+  dof: true, fstop: 8, maxBokeh: 12, waterTrim: true,
   tour: true, letterbox: true, seasonLoop: false, camMode: 'Cinematic', followFish: 0, pathSpeed: 1.0,
   stayAbove: false, hold: false, freeze: false, clean: false, volume: 0.7, sound: true,
 };
@@ -1204,6 +1204,7 @@ function buildSkyAndLights() {
 }
 
 // Recompute sun/sky/light/water-optics state from the blended environment.
+const _envZen = new THREE.Color(), _envGrey = new THREE.Color();   // per-frame scratch
 function updateEnvironment(force = false) {
   sunDirection(env.tod, P.azimuth, env.sunDir);
   const sd = env.sunDir;
@@ -1227,7 +1228,7 @@ function updateEnvironment(force = false) {
   sky.mieCoefficient.value = 0.005 + env.overcast * 0.004;
   sky.uCloud.value = env.cloud;
   sky.uOvercast.value = env.overcast;
-  const skyZen = new THREE.Color(0.32, 0.5, 0.82).multiplyScalar(0.5 + 0.5 * smoothstep(0.0, 0.5, sd.y));
+  const skyZen = _envZen.setRGB(0.32, 0.5, 0.82).multiplyScalar(0.5 + 0.5 * smoothstep(0.0, 0.5, sd.y));
   const grey = 0.55 * (0.35 + 0.65 * smoothstep(0.0, 0.6, sd.y));
   sky.uCloudAmb.value.setRGB(lerp(0.62, grey, env.overcast), lerp(0.66, grey * 1.02, env.overcast), lerp(0.74, grey * 1.07, env.overcast))
     .multiplyScalar(0.55 + 0.45 * elevFade);
@@ -1235,7 +1236,7 @@ function updateEnvironment(force = false) {
   sky.uSunDisc.value = 1 - env.overcast;
   sky.uGround.value.setRGB(0.045, 0.05, 0.035).multiplyScalar(0.5 + 0.5 * elevFade);
   // hemisphere fill
-  env.skyCol.copy(skyZen).lerp(new THREE.Color(grey, grey * 1.02, grey * 1.06), env.overcast);
+  env.skyCol.copy(skyZen).lerp(_envGrey.setRGB(grey, grey * 1.02, grey * 1.06), env.overcast);
   hemiLight.color.copy(env.skyCol);
   hemiLight.groundColor.setRGB(0.19, 0.17, 0.12);
   hemiLight.intensity = 0.2 * env.hemiMul * (0.4 + 0.6 * elevFade);
@@ -3383,6 +3384,7 @@ function buildFalling() {
   FALL.floatMesh = mk(true, FALL.maxFloat, LAYER.SURFACE);
 }
 const _fm = new THREE.Matrix4(), _fq = new THREE.Quaternion(), _fe = new THREE.Euler(), _fv = new THREE.Vector3(), _fs = new THREE.Vector3();
+const _fallG = new THREE.Vector2();
 function updateFalling(dt) {
   if (!FALL.airMesh || dt <= 0) return;
   const bloom = (1 - env.autumn) * (1 - env.snow) * (1 - env.rain * 0.5);
@@ -3425,7 +3427,7 @@ function updateFalling(dt) {
     f.age += dt;
     f.x += wx * wind * 0.035 * dt; f.z += wz * wind * 0.035 * dt;
     const sd = pondSDF(f.x, f.z);
-    if (sd > -0.03) { const g2 = pondSDFGrad(f.x, f.z, new THREE.Vector2()); f.x -= g2.x * 0.01; f.z -= g2.y * 0.01; }
+    if (sd > -0.03) { const g2 = pondSDFGrad(f.x, f.z, _fallG); f.x -= g2.x * 0.01; f.z -= g2.y * 0.01; }
     if (f.age > f.life) { FALL.floating.splice(i, 1); continue; }
     _fq.setFromAxisAngle(_py, f.yaw);
     _fe.set(-Math.PI / 2, 0, f.yaw); _fq.setFromEuler(_fe);
@@ -3629,6 +3631,7 @@ function buildTurtle() {
   OBSTACLES.push(TURTLE.obstacle);
   updateTurtle(0);
 }
+const _tuA = new THREE.Vector3(), _tuG = new THREE.Vector2();
 function updateTurtle(dt) {
   const T = TURTLE, g = T.group;
   if (!g) return;
@@ -3643,7 +3646,7 @@ function updateTurtle(dt) {
     if (T.timer < 0) { T.state = 'slide'; T.t = 0; T.from = T.pos.clone(); T.yaw = Math.atan2(-(TURTLE_ROCK.z + 0.8 - T.pos.z), TURTLE_ROCK.x + 0.9 - T.pos.x); }
   } else if (T.state === 'slide') {
     const t = Math.min(T.t / 1.2, 1);
-    const dir = new THREE.Vector3(Math.cos(T.yaw), 0, -Math.sin(T.yaw));
+    const dir = _tuA.set(Math.cos(T.yaw), 0, -Math.sin(T.yaw));
     T.pos.copy(T.from).addScaledVector(dir, t * 0.55); T.pos.y = lerp(T.from.y, WATER_Y - 0.06, t * t);
     g.position.copy(T.pos); g.rotation.set(0, T.yaw, -0.5 * t);
     if (t >= 1) {
@@ -3654,13 +3657,13 @@ function updateTurtle(dt) {
     }
   } else if (T.state === 'swim') {
     T.swimT -= dt;
-    const to = new THREE.Vector3().subVectors(T.target, T.pos); to.y = 0;
+    const to = _tuA.subVectors(T.target, T.pos); to.y = 0;
     if (to.length() < 0.3) pickTurtleTarget();
     const want = Math.atan2(-to.z, to.x);
     T.yaw += clamp(wrapAngle(want - T.yaw), -0.9 * dt, 0.9 * dt);
     const sp = 0.16;
     T.pos.x += Math.cos(T.yaw) * sp * dt; T.pos.z -= Math.sin(T.yaw) * sp * dt;
-    if (pondSDF(T.pos.x, T.pos.z) > -0.25) { const gr = pondSDFGrad(T.pos.x, T.pos.z, new THREE.Vector2()); T.pos.x -= gr.x * 0.02; T.pos.z -= gr.y * 0.02; }
+    if (pondSDF(T.pos.x, T.pos.z) > -0.25) { const gr = pondSDFGrad(T.pos.x, T.pos.z, _tuG); T.pos.x -= gr.x * 0.02; T.pos.z -= gr.y * 0.02; }
     T.pos.y = WATER_Y - 0.045 + waveHeight(T.pos.x, T.pos.z) * 0.5;
     g.position.copy(T.pos); g.rotation.set(0, T.yaw, 0.05);
     T.head.rotation.set(0, Math.sin(clock.t * 0.8) * 0.2, 0.3);
@@ -3668,7 +3671,7 @@ function updateTurtle(dt) {
     if (Math.random() < dt * 2) addDrop(T.pos.x + Math.cos(T.yaw) * 0.2, T.pos.z - Math.sin(T.yaw) * 0.2, 0.04, -0.0008);
     if (T.swimT < 0) { T.target.copy(T.home); T.state = 'return'; }
   } else if (T.state === 'return') {
-    const to = new THREE.Vector3(T.home.x + 0.5, 0, T.home.z + 0.35).sub(T.pos); to.y = 0;
+    const to = _tuA.set(T.home.x + 0.5, 0, T.home.z + 0.35).sub(T.pos); to.y = 0;
     const want = Math.atan2(-to.z, to.x);
     T.yaw += clamp(wrapAngle(want - T.yaw), -1.2 * dt, 1.2 * dt);
     T.pos.x += Math.cos(T.yaw) * 0.15 * dt; T.pos.z -= Math.sin(T.yaw) * 0.15 * dt;
@@ -3749,20 +3752,21 @@ function dragonflyTarget(df) {
   const q = shorePoint(Math.random(), -0.3 - Math.random() * 2.5);
   df.target.set(q[0], WATER_Y + 0.25 + Math.random() * 0.8, q[1]); df.perchNext = false;
 }
+const _dfTo = new THREE.Vector3(), _dfAcc = new THREE.Vector3();
 function updateDragonflies(dt) {
   const autumnRed = env.autumn;
   for (const df of DRAGONFLIES) {
     df.g.visible = env.snow < 0.5 && env.rain < 0.6 && (df.red ? autumnRed > 0.2 || DRAGONFLIES.indexOf(df) < 4 : true);
     if (!df.g.visible) continue;
     df.t -= dt;
-    const to = new THREE.Vector3().subVectors(df.target, df.pos);
+    const to = _dfTo.subVectors(df.target, df.pos);
     const d = to.length();
     if (df.mode === 'hover') {
       df.vel.multiplyScalar(Math.exp(-6 * dt));
       df.vel.x += Math.sin(clock.t * 7 + df.yaw) * 0.08 * dt * 10; df.vel.y += Math.cos(clock.t * 5.3) * 0.05 * dt * 10;
       if (df.t < 0) { dragonflyTarget(df); df.mode = 'dart'; }
     } else if (df.mode === 'dart') {
-      const acc = to.clone().normalize().multiplyScalar(14);
+      const acc = _dfAcc.copy(to).normalize().multiplyScalar(14);
       df.vel.addScaledVector(acc, dt);
       const sp = df.vel.length(), max = 3.2;
       if (sp > max) df.vel.multiplyScalar(max / sp);
@@ -4187,12 +4191,15 @@ function buildWater() {
     pos[k] = x0 + (i / N) * S; pos[k + 1] = WATER_Y; pos[k + 2] = z0 + (j / N) * S;
   }
   const idx = [];
+  WATER_BOX.makeEmpty();
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const cx = x0 + ((i + 0.5) / N) * S, cz = z0 + ((j + 0.5) / N) * S;
     if (pondSDF(cx, cz) > 0.22) continue;
     const a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1;
     idx.push(a, c, b, b, c, d);
+    WATER_BOX.expandByPoint(_v1.set(cx, WATER_Y, cz));
   }
+  WATER_BOX.expandByVector(_v1.set(S / N + 0.3, 0, S / N + 0.3));   // cell size plus the waves' sideways sway
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setIndex(new THREE.Uint32BufferAttribute(idx, 1));
@@ -4256,21 +4263,65 @@ function allocWaterTargets(w, h) {
   if (waterMat) { waterMat.uniforms.uRes.value.set(w, h); waterMat.uniforms.uRingR.value = 7 / Math.max(w, 1); }
 }
 const _wp = { above: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), below: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0) };
+// the part of a camera's view the water can cover (NDC box, waves included), or null when it is off-screen;
+// box edges that cross the eye plane are cut there so a camera above or beside the pond stays conservative
+const WATER_BOX = new THREE.Box3();
+const _wbc = Array.from({ length: 8 }, () => new THREE.Vector4()), _wbm = new THREE.Matrix4();
+const WB_EDGES = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+function waterRect(cam, out) {
+  const amp = waveAmpSum() + 0.06, b = WATER_BOX, EPS = 1e-3;
+  _wbm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+  for (let i = 0; i < 8; i++) _wbc[i].set(i & 1 ? b.max.x : b.min.x, WATER_Y + (i & 2 ? amp : -amp), i & 4 ? b.max.z : b.min.z, 1).applyMatrix4(_wbm);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (x, y, w) => { const nx = x / w, ny = y / w; if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny; };
+  for (const c of _wbc) if (c.w > EPS) add(c.x, c.y, c.w);
+  for (const [i, j] of WB_EDGES) {
+    const a = _wbc[i], c = _wbc[j];
+    if ((a.w > EPS) === (c.w > EPS)) continue;
+    const t = (EPS - a.w) / (c.w - a.w);
+    add(a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t, EPS);
+  }
+  if (!(x0 <= x1) || x0 >= 1 || x1 <= -1 || y0 >= 1 || y1 <= -1) return null;
+  return out.set(Math.max(x0, -1), Math.max(y0, -1), Math.min(x1, 1), Math.min(y1, 1));
+}
+// render only the rectangle of a target the water samples: a sub-frustum (so objects outside are culled too)
+// drawn into the matching viewport, with a margin for wave distortion and the blurred reflection mips
+const _wr = new THREE.Vector4(), _winE = new THREE.Euler(), _winE2 = new THREE.Euler();
+function trimToWater(cam, rt, mx, my) {
+  if (!P.waterTrim) return true;
+  if (!waterRect(cam, _wr)) return false;     // none of this view's water is on screen
+  const W = rt.width, H = rt.height;
+  const px0 = Math.max(0, Math.floor((_wr.x * 0.5 + 0.5) * W - mx)), px1 = Math.min(W, Math.ceil((_wr.z * 0.5 + 0.5) * W + mx));
+  const py0 = Math.max(0, Math.floor((_wr.y * 0.5 + 0.5) * H - my)), py1 = Math.min(H, Math.ceil((_wr.w * 0.5 + 0.5) * H + my));
+  if (px1 - px0 >= W && py1 - py0 >= H) return true;      // covers it all: render normally
+  cam.setViewOffset(W, H, px0, H - py1, px1 - px0, py1 - py0);
+  rt.viewport.set(px0, py0, px1 - px0, py1 - py0); rt.scissor.copy(rt.viewport); rt.scissorTest = true;
+  return true;
+}
+function untrim(cam, rt) {
+  if (cam.view && cam.view.enabled) cam.clearViewOffset();
+  rt.viewport.set(0, 0, rt.width, rt.height); rt.scissor.copy(rt.viewport); rt.scissorTest = false;
+}
 // reflection + refraction (above) or window + total-internal-reflection (below) passes
 function renderWaterPasses(under) {
   const u = waterMat.uniforms;
   const amp = waveAmpSum();
   renderer.setClearColor(0x000000, 0);
   if (!under) {
+    // nothing to do while the pond is out of view
+    if (P.waterTrim && !waterRect(camera, _wr)) return;
     mirrorCamera(camera, reflCam);
     texMatrix(reflCam, u.uReflMat.value);
+    // margins: the water shader offsets the lookup by up to 0.042 (x) and 0.1 (y, ripples + smear) of the texture, then blurs up to mip 3.5
+    const trimmed = trimToWater(reflCam, RT.refl, RT.refl.width * 0.05 + 16, RT.refl.height * 0.11 + 16);
     _wp.above.constant = -(WATER_Y - amp - 0.03);
     applyObliqueClip(reflCam, _wp.above);
     setLayers(reflCam, [LAYER.ABOVE, LAYER.BOTH, LAYER.SKY]);
     G.uViewPath.value = 0;
     skyMesh.position.copy(reflCam.position);
     renderer.setRenderTarget(RT.refl); renderer.clear(true, true, false);
-    renderer.render(scene, reflCam);
+    if (trimmed) renderer.render(scene, reflCam);
+    untrim(reflCam, RT.refl);
     skyMesh.position.copy(camera.position);
     refrCam.position.copy(camera.position); refrCam.quaternion.copy(camera.quaternion);
     refrCam.projectionMatrix.copy(camera.projectionMatrix);
@@ -4286,8 +4337,8 @@ function renderWaterPasses(under) {
   } else {
     // Snell's window: the above-water world from the eye with a wide lens, tilted upward
     winCam.position.copy(camera.position);
-    const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
-    winCam.quaternion.setFromEuler(new THREE.Euler(clamp(e.x + 0.45, 0.25, 0.95), e.y, 0, 'YXZ'));
+    const e = _winE.setFromQuaternion(camera.quaternion, 'YXZ');
+    winCam.quaternion.setFromEuler(_winE2.set(clamp(e.x + 0.45, 0.25, 0.95), e.y, 0, 'YXZ'));
     winCam.fov = 140; winCam.aspect = camera.aspect; winCam.near = 0.05; winCam.far = camera.far;
     winCam.updateProjectionMatrix(); winCam.updateMatrixWorld();
     texMatrix(winCam, u.uWinMat.value);
@@ -4376,7 +4427,8 @@ function buildWaterfall() {
   mg.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3));
   mg.setIndex([0, 1, 2, 0, 2, 3]);
   const seeds = new Float32Array(M * 4);
-  for (let i = 0; i < M; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = Math.random(); }
+  const R = mulberry32(911);   // fixed puffs: the same mist every load
+  for (let i = 0; i < M; i++) { seeds[i * 4] = R(); seeds[i * 4 + 1] = R(); seeds[i * 4 + 2] = R(); seeds[i * 4 + 3] = R(); }
   mg.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 4));
   mg.instanceCount = M;
   const mm = new THREE.ShaderMaterial({
@@ -5533,6 +5585,17 @@ void main() {
   float f = prev <= 0.0 ? target : mix(prev, target, uBlend);
   gl_FragColor = vec4(f, target, 0.0, 1.0);
 }`;
+// circle of confusion per half-res texel, the same expression the DOF pass uses at its centre
+const COC_FRAG = /* glsl */`
+${PP_COMMON}
+uniform sampler2D tFocus;
+uniform float uFocal, uAperture, uSensorH, uScreenH, uMaxCoC;
+varying vec2 vUv;
+float coc(float z, float S1) { return uAperture * uFocal * abs(z - S1) / (z * max(S1 - uFocal, 1e-3)) / uSensorH * uScreenH; }
+void main() {
+  float S1 = texture2D(tFocus, vec2(0.5)).r;
+  gl_FragColor = vec4(min(coc(linDepth(texture2D(tDepth, vUv).r), S1), uMaxCoC));
+}`;
 // DOF: physical circle of confusion, half-res gather on a golden-angle spiral
 const DOF_FRAG = /* glsl */`
 ${PP_COMMON}
@@ -5544,6 +5607,7 @@ uniform float uAperture;   // aperture diameter (m)
 uniform float uSensorH;    // sensor height (m)
 uniform float uScreenH;    // pixels
 uniform float uMaxCoC;     // pixels
+uniform sampler2D tCoc;    // per-texel CoC of this pass (for the in-focus test)
 varying vec2 vUv;
 float coc(float z, float S1) { return uAperture * uFocal * abs(z - S1) / (z * max(S1 - uFocal, 1e-3)) / uSensorH * uScreenH; }
 void main() {
@@ -5553,6 +5617,14 @@ void main() {
   vec3 acc = vec3(0.0); float wsum = 0.0;
   float R = uMaxCoC;
   if (c0 < 0.35 && R < 1.0) { gl_FragColor = vec4(texture2D(tSrc, vUv).rgb, c0); return; }
+  // in focus here and in every neighbour: the composite blends the gather in only where the (bilinear) CoC
+  // reaches 0.35, which needs one of these 3x3 texels, so this texel's colour is never used: skip the 36 taps
+  if (c0 < 0.35) {
+    ivec2 p = ivec2(gl_FragCoord.xy), last = textureSize(tCoc, 0) - 1;
+    float m = 0.0;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) m = max(m, texelFetch(tCoc, clamp(p + ivec2(i, j), ivec2(0), last), 0).r);
+    if (m < 0.349) { gl_FragColor = vec4(texture2D(tSrc, vUv).rgb, c0); return; }   // margin covers half-float storage
+  }
   const int N = 36;
   for (int i = 0; i < N; i++) {
     float r = sqrt((float(i) + 0.5) / float(N));
@@ -5690,7 +5762,8 @@ function buildPostChain() {
   POST.mats.bloomDown = ppMat(BLOOM_DOWN_FRAG, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() } });
   POST.mats.bloomUp = ppMat(BLOOM_UP_FRAG, { tSrc: { value: null }, tBase: { value: null }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 1 } });
   POST.mats.focus = ppMat(FOCUS_FRAG, Object.assign(depthU(), { tPrev: { value: null }, uBlend: { value: 0.1 }, uManual: { value: 0 } }));
-  POST.mats.dof = ppMat(DOF_FRAG, Object.assign(depthU(), { tSrc: { value: null }, tFocus: { value: null }, uTexel: { value: new THREE.Vector2() }, uFocal: { value: 0.025 }, uAperture: { value: 0.003 }, uSensorH: { value: 0.024 }, uScreenH: { value: 720 }, uMaxCoC: { value: 12 } }));
+  POST.mats.dof = ppMat(DOF_FRAG, Object.assign(depthU(), { tSrc: { value: null }, tFocus: { value: null }, tCoc: { value: null }, uTexel: { value: new THREE.Vector2() }, uFocal: { value: 0.025 }, uAperture: { value: 0.003 }, uSensorH: { value: 0.024 }, uScreenH: { value: 720 }, uMaxCoC: { value: 12 } }));
+  POST.mats.coc = ppMat(COC_FRAG, Object.assign(depthU(), { tFocus: { value: null }, uFocal: { value: 0.025 }, uAperture: { value: 0.003 }, uSensorH: { value: 0.024 }, uScreenH: { value: 720 }, uMaxCoC: { value: 12 } }));
   POST.mats.rays = ppMat(RAYS_FRAG, Object.assign(depthU(), { uCamWorld: { value: new THREE.Matrix4() }, uCamPos: { value: new THREE.Vector3() }, tCaus: G.tCaustics, uSunW: G.uSunDirW, uSunCol: G.uSunColor, uExt: { value: new THREE.Vector3() }, uTime: G.uTime, uWaterY: G.uWaterY, uStrength: { value: 0.35 } }));
   POST.mats.comp = ppMat(COMPOSITE2_FRAG, {
     tHDR: { value: null }, tAO: { value: null }, tBloom: { value: null }, tDof: { value: null }, tRays: { value: null },
@@ -5705,7 +5778,7 @@ function buildPostChain() {
 function allocPostTargets(w, h) {
   const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1);
   const half = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
-  for (const k of ['ao', 'ao2', 'dof', 'rays']) { if (RT[k]) RT[k].dispose(); RT[k] = new THREE.WebGLRenderTarget(hw, hh, half); }
+  for (const k of ['ao', 'ao2', 'dof', 'rays', 'coc']) { if (RT[k]) RT[k].dispose(); RT[k] = new THREE.WebGLRenderTarget(hw, hh, half); }
   if (RT.bloom) RT.bloom.concat(RT.bloomUp).forEach((t) => t.dispose());
   RT.bloom = []; RT.bloomUp = [];
   let bw = hw, bh = hh;
@@ -5782,6 +5855,12 @@ function renderPost(dt) {
     U.uTexel.value.set(1 / w, 1 / h);
     U.uFocal.value = focal; U.uAperture.value = focal / fstop; U.uScreenH.value = h * 0.5;
     U.uMaxCoC.value = P.maxBokeh * 0.5;
+    const K = M.coc.uniforms;
+    setDepthUniforms(M.coc);
+    K.tFocus.value = U.tFocus.value; K.uFocal.value = U.uFocal.value; K.uAperture.value = U.uAperture.value;
+    K.uSensorH.value = U.uSensorH.value; K.uScreenH.value = U.uScreenH.value; K.uMaxCoC.value = U.uMaxCoC.value;
+    fsPass(M.coc, RT.coc);
+    U.tCoc.value = RT.coc.texture;
     fsPass(M.dof, RT.dof);
   }
   // underwater god rays
@@ -6084,7 +6163,7 @@ function cinematicUpdate(dtReal) {
   camera.position.copy(_cp);
   camera.up.set(0, 1, 0);
   camera.lookAt(_ct);
-  const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+  const e = _te.setFromQuaternion(camera.quaternion, 'YXZ');
   camState.yaw = e.y; camState.pitch = e.x;
   camera.updateMatrixWorld();
 }
@@ -7690,6 +7769,7 @@ function updateDockedKoi(f, dt) {
 function strokeDocked() { const D = STROKE.fish && STROKE.fish.dock; return D && D.t >= D.dur; }
 // contact frame on the koi's back at body position s; returns wrist, palm orientation and elbow in world space
 const _st = { o: new THREE.Vector3(), c: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), d: new THREE.Vector3(), x: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), fq: new THREE.Quaternion(), w: new THREE.Vector3(), e: new THREE.Vector3(), sh: new THREE.Vector3(), tq: new THREE.Quaternion() };
+const _stY = new THREE.Vector3(), _stB = new THREE.Vector3(), _stQ0 = new THREE.Quaternion();
 function strokeTarget(s, lift) {
   const f = STROKE.fish, L = f.size, g = f.girth;
   _pe4.set(f.roll, f.heading, f.pitch, 'YZX'); _st.fq.setFromEuler(_pe4);
@@ -7709,9 +7789,9 @@ function strokeTarget(s, lift) {
   // the back is convex, so a hand laid in its tangent plane clears it before and behind the contact; lift the palm pads a touch
   const beta = 0.035;
   _st.d.applyAxisAngle(_v1.crossVectors(_st.n, _st.d).normalize(), beta);
-  const Y = _st.n.clone().applyAxisAngle(_v1, beta);
-  _st.x.crossVectors(Y, _st.d.clone().negate());
-  _st.q.setFromRotationMatrix(_st.m.makeBasis(_st.x, Y, _st.d.clone().negate()));
+  const Y = _stY.copy(_st.n).applyAxisAngle(_v1, beta), back = _stB.copy(_st.d).negate();
+  _st.x.crossVectors(Y, back);
+  _st.q.setFromRotationMatrix(_st.m.makeBasis(_st.x, Y, back));
   // the pad of the middle finger goes to the contact (with the palm the wrist can really reach); then the whole hand is seated so its lowest sphere just rests on the back
   handShoulder(_st.sh);
   for (let pass = 0; pass < 2; pass++) {
@@ -7740,7 +7820,7 @@ function strokeTarget(s, lift) {
   _st.w.addScaledVector(_st.n, seat);
   strokeElbow(_st.e, _st.w, _st.sh);
   // the orientation the wrist reaches with this elbow, and the seat for exactly that orientation
-  const cq0 = _st.q.clone();
+  const cq0 = _stQ0.copy(_st.q);
   feasiblePalm(_st.w, _st.q, _st.e, _st.q);
   {
     _v2.copy(HAND.padOffset).applyQuaternion(cq0); _st.o.addVectors(_st.w, _v2);   // keep the pad where it was
@@ -8649,6 +8729,7 @@ async function init() {
   updateEnvironment(true);
   setLoader(1, 'Compiling shaders…');
   await nextFrame();
+  if (TEST && window.__reseed) window.__reseed();   // test runs: the simulation starts from the same random state whatever was built before
   step(1 / 60);
   // compile the hand and pellet programs now so the first feed does not stutter
   HAND.mesh.visible = true; HAND.bones[HB.ARM].position.set(0, -60, 0); HAND.bones[HB.ARM].updateMatrixWorld(true);

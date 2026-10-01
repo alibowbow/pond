@@ -29,7 +29,9 @@ function ensureLibs() {
   return { three, dat };
 }
 
-export async function open({ width = 1280, height = 720, dpr = 1, query = '', headless = true } = {}) {
+// file: another copy of the page to open (A/B runs); seed: replace Math.random with a seeded generator
+// so two runs of the same page render identical frames
+export async function open({ width = 1280, height = 720, dpr = 1, query = '', headless = true, file = null, seed = null } = {}) {
   const libs = ensureLibs();
   const browser = await chromium.launch({
     headless,
@@ -38,6 +40,15 @@ export async function open({ width = 1280, height = 720, dpr = 1, query = '', he
       '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows'],
   });
   const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: dpr });
+  if (seed !== null) {
+    await context.addInitScript((sd) => {
+      let a = sd >>> 0;
+      Math.random = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+      // three.js draws UUIDs from Math.random, so pages that build different numbers of materials drift apart;
+      // reseeding once the page is ready lines the simulations up again
+      window.__reseed = (s = sd) => { a = s >>> 0; };
+    }, seed);
+  }
   const page = await context.newPage();
   const log = [];
   page.on('console', (m) => log.push({ type: m.type(), text: m.text() }));
@@ -46,13 +57,14 @@ export async function open({ width = 1280, height = 720, dpr = 1, query = '', he
     r.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(libs.three) }));
   await page.route('**/cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js', (r) =>
     r.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(libs.dat) }));
-  const url = 'file://' + path.join(ROOT, 'koi-pond.html') + '?test' + (query ? '&' + query : '');
+  const url = 'file://' + (file ? path.resolve(file) : path.join(ROOT, 'koi-pond.html')) + '?test' + (query ? '&' + query : '');
   const t0 = Date.now();
   await page.goto(url);
   // fail fast when the script throws while loading
   const died = new Promise((_, rej) => page.on('pageerror', (e) => rej(new Error('page error while loading: ' + (e && e.message || e)))));
   await Promise.race([page.waitForFunction(() => window.KOI && window.KOI.ready === true, null, { timeout: 600000 }), died]);
   const loadMs = Date.now() - t0;
+  if (seed !== null) await page.evaluate((sd) => window.__reseed(sd), seed);
   return {
     browser, page, log, loadMs,
     errors: () => log.filter((l) => l.type === 'error' || l.type === 'pageerror'),
