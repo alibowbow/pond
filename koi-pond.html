@@ -170,10 +170,35 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
   .koi-gui .dg.main:has(> ul.closed) { width: 118px !important; }
 }
 
+/* ---------- touch controls: move stick, look stick, zoom ---------- */
+#pads { display: none; transition: opacity 0.35s ease; }
+body.touch #pads { display: block; }
+body.busy #pads { opacity: 0; pointer-events: none; }
+body.busy #pads * { pointer-events: none; }
+.stick { position: fixed; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 66px); width: 124px; height: 124px; border-radius: 50%; z-index: 21;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#stMove { left: max(18px, env(safe-area-inset-left)); }
+#stLook { right: max(18px, env(safe-area-inset-right)); }
+.stick::after { content: ""; position: absolute; inset: 24px; border-radius: 50%; border: 1px solid var(--line-soft); pointer-events: none; }
+.stick .knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle at 38% 32%, rgba(255,255,255,0.5), rgba(255,255,255,0.2) 62%, rgba(255,255,255,0.12));
+  border: 1px solid rgba(255,255,255,0.32); box-shadow: 0 4px 14px rgba(0,0,0,0.3); transition: transform 0.2s ease; }
+.stick.on .knob { transition: none; border-color: rgba(240,137,76,0.75); background: radial-gradient(circle at 38% 32%, rgba(255,214,190,0.6), rgba(240,137,76,0.32) 62%, rgba(240,137,76,0.2)); }
+.stick .sl { position: absolute; left: 0; right: 0; bottom: -19px; text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+#zoom { position: fixed; right: calc(max(18px, env(safe-area-inset-right)) + 136px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 66px); z-index: 21;
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 26px; touch-action: none; user-select: none; -webkit-user-select: none; }
+#zoom button { appearance: none; -webkit-appearance: none; border: 0; margin: 0; background: transparent; color: var(--text); width: 42px; height: 42px; border-radius: 50%;
+  display: grid; place-items: center; touch-action: none; cursor: pointer; }
+#zoom button.on { background: rgba(240,137,76,0.18); color: var(--accent); }
+#zoom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+#zoom .zl { appearance: none; border: 0; background: transparent; color: var(--muted); font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  height: 22px; width: 42px; padding: 0; }
+
 /* ---------- clean view: only the film ---------- */
 #hud, #guide, #gOpen, .koi-gui { transition: opacity 0.35s ease; }
-body.clean #dock, body.clean #guide, body.clean #gOpen, body.clean #hud, body.clean .koi-gui { opacity: 0 !important; pointer-events: none !important; }
-body.clean #dock *, body.clean .koi-gui * { pointer-events: none !important; }
+body.clean #dock, body.clean #guide, body.clean #gOpen, body.clean #hud, body.clean .koi-gui, body.clean #pads { opacity: 0 !important; pointer-events: none !important; }
+body.clean #dock *, body.clean .koi-gui *, body.clean #pads * { pointer-events: none !important; }
 body.test #toast { display: none; }
 </style>
 </head>
@@ -197,7 +222,7 @@ body.test #toast { display: none; }
     <li><span class="k"><kbd>H</kbd></span>Settings panel</li>
     <li><span class="k"><kbd>I</kbd></span>This guide</li>
   </ul>
-  <div class="gf">Drag or press a move key in any mode to take the camera.<br><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>&larr;</b>/<b>&rarr;</b> turn, <b>&uarr;</b>/<b>&darr;</b> forward/back, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed. Touch: one finger looks, two fingers slide, pinch to go forward.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
+  <div class="gf">Drag or press a move key in any mode to take the camera.<br><b>Manual</b> — drag to look, <b>WASD</b> to move, <b>&larr;</b>/<b>&rarr;</b> turn, <b>&uarr;</b>/<b>&darr;</b> forward/back, <b>Q</b>/<b>Space</b> down/up, <b>Shift</b> faster, wheel sets speed. Touch: one finger looks, two fingers slide, pinch to go forward.<br><b>First person</b> (touch screens) — left stick walks, right stick looks, <b>+</b>/<b>&minus;</b> or pinch to zoom; keyboard <b>WASD</b>, wheel or <b>+</b>/<b>&minus;</b> zoom.<br><b>Click</b> the water for ripples, the frog to make it leap.</div>
 </div>
 <button id="gOpen" class="hidden" aria-label="Show guide (I)" title="Show guide (I)">?</button>
 <div id="dock" class="glass" role="toolbar" aria-label="Controls">
@@ -210,6 +235,15 @@ body.test #toast { display: none; }
   <span class="sep"></span>
   <button id="bStroke" data-tip="Stroke a koi · G" aria-label="Stroke a koi (G)"><svg viewBox="0 0 24 24"><path d="M8 12.5V5.8a1.4 1.4 0 0 1 2.8 0v5.2M10.8 11V4.4a1.4 1.4 0 0 1 2.8 0V11M13.6 11V5.4a1.4 1.4 0 0 1 2.8 0V12M16.4 12V8.2a1.4 1.4 0 0 1 2.8 0v5.8a7 7 0 0 1-7 7h-.6a6.5 6.5 0 0 1-5.2-2.6L4 15.1a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><span class="lbl">Stroke a koi</span></button>
   <button id="bFeed" class="primary" data-tip="Feed the koi · E" aria-label="Feed the koi (E)"><svg viewBox="0 0 24 24"><path d="M5 12c2.5-3.6 5.8-5.2 9-5.2 2.8 0 4.9 1.7 6.5 5.2-1.6 3.5-3.7 5.2-6.5 5.2-3.2 0-6.5-1.6-9-5.2z"/><path d="M5 12 2 8.8v6.4z"/><circle cx="16.6" cy="11" r="0.9" fill="currentColor" stroke="none"/></svg><span class="lbl">Feed the koi</span></button>
+</div>
+<div id="pads" role="group" aria-label="Touch controls">
+  <div id="stMove" class="stick glass"><div class="knob"></div><span class="sl">Move</span></div>
+  <div id="zoom" class="glass">
+    <button id="zIn" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
+    <button id="zLbl" class="zl" aria-label="Reset zoom">1.0&times;</button>
+    <button id="zOut" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg></button>
+  </div>
+  <div id="stLook" class="stick glass"><div class="knob"></div><span class="sl">Look</span></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
@@ -5826,11 +5860,13 @@ function applyCamRotation() {
 // keys that fly the manual camera; pressing one (or dragging) in another mode takes the camera over
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 const _te = new THREE.Euler();
-function takeManual() {
-  if (CAM.mode === 'Manual' || STROKE.on || CAMX.on) return CAM.mode === 'Manual';
+const freeCam = () => CAM.mode === 'Manual' || CAM.mode === 'First person';
+function takeControl(m = 'Manual') {
+  if (CAM.mode === m) return true;
+  if (STROKE.on || CAMX.on || HAND.on) return freeCam();
   _te.setFromQuaternion(camera.quaternion, 'YXZ');      // carry on from exactly where the shot was looking
   camState.yaw = _te.y; camState.pitch = clamp(_te.x, -1.5, 1.5);
-  setCamMode('Manual'); P.tour = false;
+  setCamMode(m); P.tour = false;
   if (window.GUI_REFRESH) GUI_REFRESH();
   return true;
 }
@@ -5859,14 +5895,17 @@ function setupInput() {
     p.x = e.clientX; p.y = e.clientY;
     if (STROKE.on) { camState.lx = e.clientX; camState.ly = e.clientY; return; }
     if (pts.size >= 2) {
-      // two fingers: pinch to go forward/back, drag to slide sideways and up/down
+      // two fingers: walking, pinch zooms; flying, pinch goes forward/back and a drag slides sideways and up/down
       const [a, b] = [...pts.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      if (pinch && takeManual()) {
-        const k = camState.speed * 0.004;
-        const f = _v1.set(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw)), r = _v2.set(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
-        camera.position.addScaledVector(f, (d - pinch.d) * k * 1.5).addScaledVector(r, -(mx - pinch.mx) * k);
-        camera.position.y += (my - pinch.my) * k;
+      if (pinch && (freeCam() || takeControl(e.pointerType === 'touch' ? 'First person' : 'Manual'))) {
+        if (CAM.mode === 'First person') CAM.zoomT = clamp(CAM.zoomT * d / Math.max(pinch.d, 1), ZOOM.min, ZOOM.max);
+        else {
+          const k = camState.speed * 0.004;
+          const f = _v1.set(-Math.sin(camState.yaw), 0, -Math.cos(camState.yaw)), r = _v2.set(Math.cos(camState.yaw), 0, -Math.sin(camState.yaw));
+          camera.position.addScaledVector(f, (d - pinch.d) * k * 1.5).addScaledVector(r, -(mx - pinch.mx) * k);
+          camera.position.y += (my - pinch.my) * k;
+        }
       }
       pinch = { d, mx, my };
       return;
@@ -5874,22 +5913,24 @@ function setupInput() {
     if (!camState.drag) return;
     const dx = e.clientX - camState.lx, dy = e.clientY - camState.ly;
     // a click on the water or the frog stays a click; a real drag takes the camera
-    if (CAM.mode !== 'Manual') {
-      if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6 || !takeManual()) return;
+    if (!freeCam()) {
+      if (!downAt || Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6 || !takeControl(e.pointerType === 'touch' ? 'First person' : 'Manual')) return;
     }
     camState.lx = e.clientX; camState.ly = e.clientY;
-    camState.yaw -= dx * 0.0032; camState.pitch = clamp(camState.pitch - dy * 0.0032, -1.5, 1.5);
+    const g = 0.0032 / Math.max(CAM.zoom, 1);      // finer when zoomed in
+    camState.yaw -= dx * g; camState.pitch = clamp(camState.pitch - dy * g, -1.5, 1.5);
   });
   let speedToastT = 0;
   el.addEventListener('wheel', (e) => {
-    camState.speed = clamp(camState.speed * Math.pow(1.0015, -e.deltaY), 0.2, 40);
     e.preventDefault();
+    if (CAM.mode === 'First person') { CAM.zoomT = clamp(CAM.zoomT * Math.pow(1.0015, -e.deltaY), ZOOM.min, ZOOM.max); return; }   // walking: the wheel zooms
+    camState.speed = clamp(camState.speed * Math.pow(1.0015, -e.deltaY), 0.2, 40);
     const now = performance.now();
     if (now - speedToastT > 250) { speedToastT = now; toast('Move speed ' + camState.speed.toFixed(1) + ' m/s'); }
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
     if (typing(e)) return;
-    if (MOVE_KEYS.has(e.code)) { e.preventDefault(); if (CAM.mode !== 'Manual' && !e.repeat) takeManual(); }
+    if (MOVE_KEYS.has(e.code)) { e.preventDefault(); if (!freeCam() && !e.repeat) takeControl('Manual'); }
     camState.keys.add(e.code);
   });
   window.addEventListener('keyup', (e) => { camState.keys.delete(e.code); });
@@ -5919,8 +5960,71 @@ function updateManualCamera(dt) {
   applyCamRotation();
 }
 
-// ---------- camera modes: cinematic film tour, manual fly, follow koi ----------
-const CAM = { mode: 'Cinematic', shot: 0, t: 0, loop: 0, fade: 1, letterbox: 0, caption: '', follow: 0, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), started: false, lastShot: -1, subject: null, capT: -1 };
+// ---------- first person: walk at eye height on the ground, the bridge and the pier; the pond itself is off limits ----------
+const WALK = { eye: 1.55, speed: 1.9, cx: 0.5, cz: -0.5, R: 20 };
+const STICK = { move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, zoomDir: 0 };   // touch sticks, -1..1 (screen axes)
+function walkDeck(x, z) {
+  // bridge deck (ramps included) and pier boards, or null
+  if (bridgeDeckY && BRIDGE.half) {
+    const dx = x - BRIDGE.cx, dz = z - BRIDGE.cz;
+    const lx = dx * Math.cos(BRIDGE.yaw) - dz * Math.sin(BRIDGE.yaw), lz = dx * Math.sin(BRIDGE.yaw) + dz * Math.cos(BRIDGE.yaw);
+    if (Math.abs(lx) < BRIDGE.half + 0.2 && Math.abs(lz) < BRIDGE.width / 2 - 0.1) return bridgeDeckY(x, z) + 0.03;
+  }
+  const px = x - PIER.x, pz = z - PIER.z;
+  const plx = px * Math.cos(PIER.yaw) - pz * Math.sin(PIER.yaw), plz = px * Math.sin(PIER.yaw) + pz * Math.cos(PIER.yaw);
+  if (Math.abs(plx) < PIER.width / 2 - 0.05 && Math.abs(plz) < PIER.len / 2) return PIER.y + 0.025;
+  return null;
+}
+function walkGround(x, z) {
+  const t = terrainHeight(x, z), deck = walkDeck(x, z);
+  if (deck !== null) return Math.max(t, deck);
+  return t > WATER_Y - 0.1 ? t : null;     // null: open water (a pebble-beach paddle is fine)
+}
+function updateWalkCamera(dt) {
+  const k = camState.keys, fast = k.has('ShiftLeft') || k.has('ShiftRight') ? 2.2 : 1;
+  const fine = 1 / Math.max(CAM.zoom, 1);
+  const turn = (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0);
+  camState.yaw += (turn * 1.4 - STICK.look.x * 2.3) * fine * dt;
+  camState.pitch = clamp(camState.pitch - STICK.look.y * 1.5 * fine * dt, -1.45, 1.45);
+  let mf = ((k.has('KeyW') || k.has('ArrowUp')) ? 1 : 0) - ((k.has('KeyS') || k.has('ArrowDown')) ? 1 : 0) - STICK.move.y;
+  let ms = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0) + STICK.move.x;
+  const m = Math.hypot(mf, ms); if (m > 1) { mf /= m; ms /= m; }
+  const p = camera.position, sp = WALK.speed * fast * dt;
+  const sx = (-Math.sin(camState.yaw) * mf + Math.cos(camState.yaw) * ms) * sp, sz = (-Math.cos(camState.yaw) * mf - Math.sin(camState.yaw) * ms) * sp;
+  if (sx || sz) {
+    // never step from dry ground into the pond: slide along the shore instead
+    const here = walkGround(p.x, p.z) !== null;
+    const ok = (x, z) => !here || walkGround(x, z) !== null;
+    if (ok(p.x + sx, p.z + sz)) { p.x += sx; p.z += sz; }
+    else if (ok(p.x + sx, p.z)) p.x += sx;
+    else if (ok(p.x, p.z + sz)) p.z += sz;
+    const dx = p.x - WALK.cx, dz = p.z - WALK.cz, d = Math.hypot(dx, dz);
+    if (d > WALK.R) { p.x = WALK.cx + (dx / d) * WALK.R; p.z = WALK.cz + (dz / d) * WALK.R; }
+  }
+  // eye height follows the ground (over open water, the surface)
+  const g = walkGround(p.x, p.z), gy = (g === null ? WATER_Y + 0.05 : g) + WALK.eye;
+  p.y = lerp(p.y, gy, 1 - Math.exp(-dt * (p.y > gy + 0.8 ? 2.6 : 9)));
+  applyCamRotation();
+}
+// zoom (field of view) for the free cameras; portrait screens get a wider base view so they are not cropped to a slit
+const ZOOM = { min: 0.75, max: 5, base: 52 };
+function baseFov() { return clamp((2 * Math.atan(Math.tan((56 / 2) * DEG) / Math.max(camera.aspect, 0.1))) / DEG, ZOOM.base, 86); }
+let _zLblV = '';
+function updateZoom(dt) {
+  syncTouchUI();
+  const free = freeCam() && !HAND.on && !STROKE.on && !CAMX.on;
+  const k = camState.keys;
+  const dir = STICK.zoomDir + ((k.has('Equal') || k.has('NumpadAdd')) ? 1 : 0) - ((k.has('Minus') || k.has('NumpadSubtract')) ? 1 : 0);
+  if (free && dir) CAM.zoomT = clamp(CAM.zoomT * Math.exp(dir * 1.2 * dt), ZOOM.min, ZOOM.max);
+  CAM.zoom = lerp(CAM.zoom, free ? CAM.zoomT : 1, 1 - Math.exp(-dt * 10));
+  const fov = (2 * Math.atan(Math.tan((baseFov() / 2) * DEG) / CAM.zoom)) / DEG;
+  if (Math.abs(fov - camera.fov) > 1e-4) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  const lbl = (free ? CAM.zoomT : 1).toFixed(1) + '\u00d7';
+  if (lbl !== _zLblV) { _zLblV = lbl; const el = document.getElementById('zLbl'); if (el) el.textContent = lbl; }
+}
+
+// ---------- camera modes: cinematic film tour, manual fly, first person walk, follow koi ----------
+const CAM = { mode: 'Cinematic', shot: 0, t: 0, loop: 0, fade: 1, letterbox: 0, caption: '', follow: 0, pos: new THREE.Vector3(), tgt: new THREE.Vector3(), started: false, lastShot: -1, subject: null, capT: -1, zoom: 1, zoomT: 1, resumeWalk: false };
 const _cp = new THREE.Vector3(), _ct = new THREE.Vector3();
 const easeIO = (t) => t * t * (3 - 2 * t);
 function highestKoi() {
@@ -6007,15 +6111,23 @@ function setCamMode(m) {
   if (m === 'Cinematic') { CAM.t = 0; CAM.lastShot = -1; }
   if (m === 'Follow koi') { CAM.pos.set(0, 0, 0); }
   if (m !== 'Cinematic') { CAM.fade = 0; hideCaption(); }
-  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD or arrows to move' : 'Following ' + FISH[CAM.follow].variety, m === 'Manual' ? 3200 : 2200);
+  if (m === 'Cinematic' || m === 'Follow koi') CAM.zoomT = 1;
+  const touch = document.body.classList.contains('touch');
+  toast(m === 'Cinematic' ? 'Cinematic tour' : m === 'Manual' ? 'Manual — drag to look, WASD or arrows to move'
+    : m === 'First person' ? (touch ? 'First person — left stick walks, right stick looks' : 'First person — WASD walks, drag to look, wheel zooms')
+    : 'Following ' + FISH[CAM.follow].variety, m === 'Manual' || m === 'First person' ? 3200 : 2200);
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
 function updateCamera(dtReal, dt) {
+  updateZoom(dtReal);
   if (CAMX.on) { updateCamTransition(dtReal); return; }
   if (STROKE.on && CAM.mode === 'Manual') { CAM.letterbox = lerp(CAM.letterbox, 0, 1 - Math.exp(-dtReal * 3)); CAM.fade = 0; applyCamRotation(); return; }
   if (CAM.mode === 'Cinematic') cinematicUpdate(dtReal);
   else if (CAM.mode === 'Follow koi') followUpdate(dtReal);
-  else { CAM.letterbox = lerp(CAM.letterbox, 0, 1 - Math.exp(-dtReal * 3)); CAM.fade = 0; updateManualCamera(dtReal); }
+  else {
+    CAM.letterbox = lerp(CAM.letterbox, 0, 1 - Math.exp(-dtReal * 3)); CAM.fade = 0;
+    if (CAM.mode === 'First person') updateWalkCamera(dtReal); else updateManualCamera(dtReal);
+  }
 }
 // captions (serif, fading) live in the DOM
 function showCaption(name, sub) {
@@ -7193,6 +7305,7 @@ function startFeed() {
   if (HAND.on && HAND.mode === 'feed' && FEED.phase === 'rub') { FEED.toRelease = Math.min(FEED.toRelease + 25, PELLET_MAX - alive + FEED.released); return; }
   if (HAND.on) return;
   if (alive > PELLET_MAX - 20) { toast('Plenty of food on the water already'); return; }
+  CAM.resumeWalk = CAM.mode === 'First person';
   FEED.on = true; FEED.t = 0; FEED.released = 0; FEED.relAcc = 0; FEED.quietT = 0;
   FEED.toRelease = Math.min(50 + Math.floor(Math.random() * 20), PELLET_MAX - alive);
   if (!feedViewOk()) {
@@ -7261,7 +7374,7 @@ function updateFeedHand(dt) {
     HAND.tp.lerpVectors(FEED_AT, FEED_OFF, u); HAND.te.lerpVectors(FEED_ELB_AT, FEED_ELB_OFF, u);
     handFeedOrient(HAND.tq, 0);
     lerpPose(HAND.poseT, HAND_POSES.pinch, HAND_POSES.reach, smootherstep(0, 0.6, FEED.t / 0.95));
-    if (FEED.t >= 1.25) { FEED.phase = 'idle'; HAND.on = false; }
+    if (FEED.t >= 1.25) { FEED.phase = 'idle'; HAND.on = false; resumeWalk(); }
   }
 }
 // pinch point (between thumb and index pads) in world space
@@ -7506,6 +7619,7 @@ function startStroke() {
   if (!KOI.ready || STROKE.on || (HAND.on && HAND.mode === 'feed')) return;
   AUDIO.start();
   buildHand();
+  CAM.resumeWalk = CAM.mode === 'First person';
   const spot = chooseStrokeSpot();
   const fish = spot && chooseStrokeFish(spot);
   if (!fish) { toast('No koi close enough to stroke right now'); return; }
@@ -7754,6 +7868,14 @@ function endStroke() {
   const i = OBSTACLES.indexOf(STROKE.obstacle); if (i >= 0) OBSTACLES.splice(i, 1);
   STROKE.on = false; STROKE.phase = ''; STROKE.fish = null;
   HAND.on = false;
+  resumeWalk();
+}
+// back to walking after feeding or stroking started from the first-person view (quietly: no toast)
+function resumeWalk() {
+  if (!CAM.resumeWalk) return;
+  CAM.resumeWalk = false;
+  CAM.mode = P.camMode = 'First person';
+  if (window.GUI_REFRESH) GUI_REFRESH();
 }
 // drag along the koi to stroke it
 function setupStrokeInput() {
@@ -8038,7 +8160,7 @@ function buildGUI() {
   add(cam, P, 'tour').name('Film tour').onChange((v) => setCamMode(v ? 'Cinematic' : 'Manual'));
   add(cam, P, 'letterbox').name('Letterbox');
   add(cam, P, 'seasonLoop').name('Season each loop');
-  add(cam, P, 'camMode', ['Cinematic', 'Manual', 'Follow koi']).name('Mode').onChange((v) => setCamMode(v));
+  add(cam, P, 'camMode', ['Cinematic', 'Manual', 'First person', 'Follow koi']).name('Mode').onChange((v) => setCamMode(v));
   add(cam, P, 'followFish', 0, MAX_KOI - 1, 1).name('Follow').onChange((v) => { CAM.follow = v; });
   add(cam, P, 'pathSpeed', 0.2, 3, 0.01).name('Path speed');
   add(cam, P, 'stayAbove').name('Stay above water');
@@ -8057,7 +8179,7 @@ function syncDock() {
   const t = (id, on) => { const b = document.getElementById(id); if (b) b.classList.toggle('on', !!on); };
   t('bHold', P.hold); t('bFreeze', P.freeze); t('bClean', UI.clean);
   const s = document.getElementById('bSound'); if (s) s.classList.toggle('off', AUDIO.muted);
-  const m = document.getElementById('bCam'); if (m) m.querySelector('.lbl').textContent = CAM.mode === 'Follow koi' ? 'Follow' : CAM.mode;
+  const m = document.getElementById('bCam'); if (m) m.querySelector('.lbl').textContent = CAM.mode === 'Follow koi' ? 'Follow' : CAM.mode === 'First person' ? 'Walk' : CAM.mode;
   const w = document.getElementById('bWeather'); if (w) w.querySelector('.lbl').textContent = P.weather;
 }
 function setClean(v) {
@@ -8072,12 +8194,71 @@ function setGuide(v) {
   document.getElementById('gOpen').classList.toggle('hidden', v);
 }
 function setPanel(v) { UI.panel = v; const el = gui && gui.domElement.parentElement; if (el) el.style.display = v ? '' : 'none'; }
-function cycleCam() { const modes = ['Cinematic', 'Manual', 'Follow koi']; setCamMode(modes[(modes.indexOf(CAM.mode) + 1) % 3]); P.tour = CAM.mode === 'Cinematic'; }
+function cycleCam() { const modes = ['Cinematic', 'Manual', 'Follow koi', 'First person']; setCamMode(modes[(modes.indexOf(CAM.mode) + 1) % modes.length]); P.tour = CAM.mode === 'Cinematic'; }
 function cycleWeather() { setWeather(WEATHER_NAMES[(WEATHER_NAMES.indexOf(P.weather) + 1) % WEATHER_NAMES.length]); }
 function followNext() { if (CAM.mode !== 'Follow koi') { CAM.follow = P.followFish; setCamMode('Follow koi'); } else { CAM.follow = (CAM.follow + 1) % Math.max(P.fishCount, 1); P.followFish = CAM.follow; toast('Following ' + FISH[CAM.follow].variety); } P.tour = false; }
+// touch sticks and zoom buttons (shown on touch screens, or with ?touch)
+function setupPads() {
+  const body = document.body;
+  if (QS.has('touch') || (window.matchMedia && matchMedia('(pointer: coarse)').matches)) body.classList.add('touch');
+  window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') body.classList.add('touch'); }, true);
+  const R = 38;   // knob travel (px)
+  const stick = (id, out) => {
+    const el = document.getElementById(id), knob = el.querySelector('.knob');
+    let pid = null, cx = 0, cy = 0;
+    const set = (x, y) => {
+      let dx = x - cx, dy = y - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx *= R / d; dy *= R / d; }
+      knob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+      // small dead zone, then a gentle curve so slow walking and fine aiming are easy
+      const m = Math.min(d, R) / R, a = m < 0.1 ? 0 : Math.pow((m - 0.1) / 0.9, 1.35);
+      out.x = m > 0 ? (dx / R) * (a / m) : 0; out.y = m > 0 ? (dy / R) * (a / m) : 0;
+    };
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (pid !== null || !takeControl('First person') || CAM.mode !== 'First person') return;
+      AUDIO.start();
+      pid = e.pointerId;
+      try { el.setPointerCapture(pid); } catch (err) { /* pointer already gone */ }
+      const r = el.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+      el.classList.add('on'); set(e.clientX, e.clientY);
+    });
+    el.addEventListener('pointermove', (e) => { if (e.pointerId === pid) set(e.clientX, e.clientY); });
+    const end = (e) => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('on'); knob.style.transform = ''; out.x = out.y = 0; };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('lostpointercapture', end);
+  };
+  stick('stMove', STICK.move);
+  stick('stLook', STICK.look);
+  // hold + or - to zoom; tap the readout to reset
+  const zb = (id, dir) => {
+    const b = document.getElementById(id);
+    let pid = null;
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (!freeCam() && !takeControl('First person')) return;
+      AUDIO.start();
+      pid = e.pointerId; try { b.setPointerCapture(pid); } catch (err) { /* gone */ }
+      STICK.zoomDir = dir; b.classList.add('on');
+    });
+    const end = (e) => { if (e.pointerId !== pid) return; pid = null; if (STICK.zoomDir === dir) STICK.zoomDir = 0; b.classList.remove('on'); };
+    b.addEventListener('pointerup', end); b.addEventListener('pointercancel', end); b.addEventListener('lostpointercapture', end);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  };
+  zb('zIn', 1); zb('zOut', -1);
+  document.getElementById('zLbl').addEventListener('click', () => { CAM.zoomT = 1; });
+  for (const id of ['stMove', 'stLook', 'zoom']) document.getElementById(id).addEventListener('contextmenu', (e) => e.preventDefault());
+}
+// hide the sticks while a hand is out or the camera is being moved for it
+let _busyV = false;
+function syncTouchUI() {
+  const busy = HAND.on || STROKE.on || CAMX.on;
+  if (busy !== _busyV) { _busyV = busy; document.body.classList.toggle('busy', busy); if (busy) { STICK.move.x = STICK.move.y = STICK.look.x = STICK.look.y = 0; STICK.zoomDir = 0; } }
+}
 function setupUI() {
   buildGUI();
   setupStrokeInput();
+  setupPads();
   // automated screenshots show only the scene unless ?ui is given
   if (TEST && !QS.has('ui')) { UI.clean = true; document.body.classList.add('clean', 'test'); }
   const on = (id, fn) => { const b = document.getElementById(id); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); AUDIO.start(); fn(); b.blur(); }); };
@@ -8091,7 +8272,7 @@ function setupUI() {
   on('bFeed', () => startFeed());
   on('gClose', () => setGuide(false));
   on('gOpen', () => setGuide(true));
-  const small = window.innerWidth < 560 || (window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const small = window.innerWidth < 560 || document.body.classList.contains('touch');   // touch screens keep the sticks clear
   setGuide(lsGet('koi.guide', small ? '0' : '1') === '1');
   AUDIO.muted = lsGet('koi.muted', '0') === '1'; P.sound = !AUDIO.muted;
   syncDock();
