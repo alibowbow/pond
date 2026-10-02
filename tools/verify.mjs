@@ -1,4 +1,4 @@
-// Section 13 verification pass: screenshots, native-res koi crops, hand and koi metrics,
+// Section 13 verification pass: screenshots, native-res koi crops, feeding and koi metrics,
 // frame-cost figures, console errors and a parse check. Writes <outDir>/report.json.
 // Usage: node tools/verify.mjs <outDir> [parts=parse,views,weather,koi,crops,metrics,perf]
 // Note: headless runs use SwiftShader (CPU rasteriser), so frame times here are not GPU
@@ -104,16 +104,12 @@ if (parts.includes('crops')) {
 
 if (parts.includes('metrics')) {
   const s = await open({ width: 320, height: 180 });
-  report.feed = await s.eval(() => KOI.handMetrics('feed', 14, 1 / 60, 3));
+  report.feed = await s.eval(() => KOI.feedMetrics(14, 1 / 60));
   console.log('feed', JSON.stringify(report.feed));
-  await s.close();
-  const s2 = await open({ width: 320, height: 180 });
-  report.stroke = await s2.eval(() => KOI.handMetrics('stroke', 18, 1 / 60, 3));
-  console.log('stroke', JSON.stringify(report.stroke));
-  report.koi = await s2.eval(() => KOI.koiMetrics(90, 1 / 30));
+  report.koi = await s.eval(() => KOI.koiMetrics(90, 1 / 30));
   console.log('koi', JSON.stringify(report.koi));
-  report.errors.metrics = [...errs(s), ...errs(s2)];
-  await s2.close();
+  report.errors.metrics = errs(s);
+  await s.close();
   save();
 }
 

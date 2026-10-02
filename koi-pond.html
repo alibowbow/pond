@@ -215,7 +215,6 @@ body.test #toast { display: none; }
     <li><span class="k"><kbd>O</kbd></span>Freeze time</li>
     <li><span class="k"><kbd>V</kbd><kbd>Esc</kbd></span>Clean view</li>
     <li><span class="k"><kbd>E</kbd></span>Feed the koi</li>
-    <li><span class="k"><kbd>G</kbd></span>Stroke a koi</li>
     <li><span class="k"><kbd>K</kbd></span>Follow a koi (next fish)</li>
     <li><span class="k"><kbd>T</kbd></span>Weather &amp; season</li>
     <li><span class="k"><kbd>M</kbd></span>Mute / unmute</li>
@@ -233,7 +232,6 @@ body.test #toast { display: none; }
   <button id="bWeather" data-tip="Weather · T" aria-label="Weather (T)"><svg viewBox="0 0 24 24"><path d="M8.5 5V3.5M4.2 6.8l-1-1M13.8 6.8l1-1M3 11H1.5"/><path d="M5.6 12.4A3.6 3.6 0 1 1 12.3 9"/><path d="M8 19.5h9.5a3.5 3.5 0 0 0 .4-7 5 5 0 0 0-9.6 1.2A2.9 2.9 0 0 0 8 19.5z"/></svg><span class="lbl">Sunny</span></button>
   <button id="bSound" data-tip="Sound · M" aria-label="Sound (M)"><svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><g class="w"><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.8a7.5 7.5 0 0 1 0 10.4"/></g><g class="x"><path d="M16 9.5l5 5M21 9.5l-5 5"/></g></svg><span class="lbl">Sound</span></button>
   <span class="sep"></span>
-  <button id="bStroke" data-tip="Stroke a koi · G" aria-label="Stroke a koi (G)"><svg viewBox="0 0 24 24"><path d="M8 12.5V5.8a1.4 1.4 0 0 1 2.8 0v5.2M10.8 11V4.4a1.4 1.4 0 0 1 2.8 0V11M13.6 11V5.4a1.4 1.4 0 0 1 2.8 0V12M16.4 12V8.2a1.4 1.4 0 0 1 2.8 0v5.8a7 7 0 0 1-7 7h-.6a6.5 6.5 0 0 1-5.2-2.6L4 15.1a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><span class="lbl">Stroke a koi</span></button>
   <button id="bFeed" class="primary" data-tip="Feed the koi · E" aria-label="Feed the koi (E)"><svg viewBox="0 0 24 24"><path d="M5 12c2.5-3.6 5.8-5.2 9-5.2 2.8 0 4.9 1.7 6.5 5.2-1.6 3.5-3.7 5.2-6.5 5.2-3.2 0-6.5-1.6-9-5.2z"/><path d="M5 12 2 8.8v6.4z"/><circle cx="16.6" cy="11" r="0.9" fill="currentColor" stroke="none"/></svg><span class="lbl">Feed the koi</span></button>
 </div>
 <div id="pads" role="group" aria-label="Touch controls">
@@ -3271,7 +3269,7 @@ function buildWaterPlants() {
   bm.castShadow = true; bm.receiveShadow = true; bm.layers.set(LAYER.ABOVE); scene.add(bm);
   addM(irisFlowers, plantMaterial({ key: 'irisFlower', mat: { roughness: 0.55 } }), LAYER.ABOVE);
 }
-// pads drift on their tethers and can be pushed aside (by the hand)
+// pads drift on their tethers in the wind
 const _pm = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pv = new THREE.Vector3(), _ps = new THREE.Vector3(), _py = new THREE.Vector3(0, 1, 0);
 function updatePads(dt, force = false) {
   const wx = G.uWindDir.value.x * G.uWind.value * 0.012, wz = G.uWindDir.value.y * G.uWind.value * 0.012;
@@ -5247,8 +5245,6 @@ function updateKoi(dt) {
   for (let k = 0; k < n && dt > 0; k++) {
     const f = FISH[k];
     if (f.pose) continue;
-    if (f.dock) { updateDockedKoi(f, dt); continue; }
-    if (f.dorsalFlat > 0) f.dorsalFlat = Math.max(0, f.dorsalFlat - dt * 0.7);
     f.prev.copy(f.pos);
     // ---- mode machine: burst-and-glide with hover episodes ----
     f.modeT -= dt;
@@ -5412,14 +5408,14 @@ const _ca = new Float32Array(9), _cb = new Float32Array(9);
 function resolveKoiOverlaps(n) {
   for (let it = 0; it < 5; it++) for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) {
     const A = FISH[a], B = FISH[b];
-    if ((A.pose || A.dock) && (B.pose || B.dock)) continue;
+    if (A.pose && B.pose) continue;
     if (Math.abs(A.pos.x - B.pos.x) > (A.size + B.size) * 0.6 || Math.abs(A.pos.z - B.pos.z) > (A.size + B.size) * 0.6) continue;
     koiSphereCentres(A, _ca); koiSphereCentres(B, _cb);
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
       const dx = _ca[i * 3] - _cb[j * 3], dy = _ca[i * 3 + 1] - _cb[j * 3 + 1], dz = _ca[i * 3 + 2] - _cb[j * 3 + 2];
       const d = Math.hypot(dx, dy, dz), minD = KOI_SPH[i][1] * A.size * A.girth + KOI_SPH[j][1] * B.size * B.girth;
       if (d < minD && d > 1e-6) {
-        const ma = A.pose || A.dock ? 0 : A.size ** 3, mb = B.pose || B.dock ? 0 : B.size ** 3, tot = ma + mb || 1;
+        const ma = A.pose ? 0 : A.size ** 3, mb = B.pose ? 0 : B.size ** 3, tot = ma + mb || 1;
         const push = (minD - d) * 1.02, hl = Math.hypot(dx, dz) || 1e-6, ux = dx / hl, uz = dz / hl;
         // resolve horizontally (vertical room is bounded by floor and troughs)
         A.pos.x += ux * push * (mb / tot); A.pos.z += uz * push * (mb / tot);
@@ -5428,7 +5424,7 @@ function resolveKoiOverlaps(n) {
       }
     }
   }
-  for (let a = 0; a < n; a++) { const f = FISH[a]; if (!f.pose && !f.dock) keepKoiInDepth(f); }
+  for (let a = 0; a < n; a++) { const f = FISH[a]; if (!f.pose) keepKoiInDepth(f); }
 }
 function writeKoiInstances(n) {
   const sw = KA.swim.array, mi = KA.misc.array, fi = KA.fin.array, lk = KA.look.array;
@@ -5793,12 +5789,11 @@ function setDepthUniforms(m) {
   m.uniforms.uProjInv.value.copy(camera.projectionMatrixInverse);
   m.uniforms.uNear.value = camera.near; m.uniforms.uFar.value = camera.far;
 }
-// while a hand is out, focus where the hand works instead of on the pond floor
+// while feeding, focus on the water the pellets land on instead of the pond floor
 const _fcP = new THREE.Vector3(), _fcD = new THREE.Vector3();
 function focusOverride() {
   camera.getWorldDirection(_fcD);
-  if (STROKE.on && STROKE.fish && STROKE.phase !== 'lean') _fcP.copy(STROKE.fish.pos).setY(WATER_Y);
-  else if (HAND.on && HAND.mode === 'feed' && _fcD.y < -0.05) _fcP.copy(camera.position).addScaledVector(_fcD, (WATER_Y - camera.position.y) / _fcD.y);
+  if (FEED.on && _fcD.y < -0.05) _fcP.copy(camera.position).addScaledVector(_fcD, (WATER_Y - camera.position.y) / _fcD.y);
   else return 0;
   return Math.max(0.2, _fcP.sub(camera.position).dot(_fcD));
 }
@@ -5942,7 +5937,7 @@ const _te = new THREE.Euler();
 const freeCam = () => CAM.mode === 'Manual' || CAM.mode === 'First person';
 function takeControl(m = 'Manual') {
   if (CAM.mode === m) return true;
-  if (STROKE.on || CAMX.on || HAND.on) return freeCam();
+  if (CAMX.on) return freeCam();
   _te.setFromQuaternion(camera.quaternion, 'YXZ');      // carry on from exactly where the shot was looking
   camState.yaw = _te.y; camState.pitch = clamp(_te.x, -1.5, 1.5);
   setCamMode(m); P.tour = false;
@@ -5972,7 +5967,6 @@ function setupInput() {
     const p = pts.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY;
-    if (STROKE.on) { camState.lx = e.clientX; camState.ly = e.clientY; return; }
     if (pts.size >= 2) {
       // two fingers: walking, pinch zooms; flying, pinch goes forward/back and a drag slides sideways and up/down
       const [a, b] = [...pts.values()];
@@ -6091,7 +6085,7 @@ function baseFov() { return clamp((2 * Math.atan(Math.tan((56 / 2) * DEG) / Math
 let _zLblV = '';
 function updateZoom(dt) {
   syncTouchUI();
-  const free = freeCam() && !HAND.on && !STROKE.on && !CAMX.on;
+  const free = freeCam() && !CAMX.on;
   const k = camState.keys;
   const dir = STICK.zoomDir + ((k.has('Equal') || k.has('NumpadAdd')) ? 1 : 0) - ((k.has('Minus') || k.has('NumpadSubtract')) ? 1 : 0);
   if (free && dir) CAM.zoomT = clamp(CAM.zoomT * Math.exp(dir * 1.2 * dt), ZOOM.min, ZOOM.max);
@@ -6184,7 +6178,6 @@ function followUpdate(dtReal) {
   CAM.fade = 0; CAM.letterbox = lerp(CAM.letterbox, 0, k);
 }
 function setCamMode(m) {
-  if (STROKE.on) endStroke();
   CAMX.on = false;
   P.camMode = m; CAM.mode = m;
   if (m === 'Cinematic') { CAM.t = 0; CAM.lastShot = -1; }
@@ -6200,7 +6193,6 @@ function setCamMode(m) {
 function updateCamera(dtReal, dt) {
   updateZoom(dtReal);
   if (CAMX.on) { updateCamTransition(dtReal); return; }
-  if (STROKE.on && CAM.mode === 'Manual') { CAM.letterbox = lerp(CAM.letterbox, 0, 1 - Math.exp(-dtReal * 3)); CAM.fade = 0; applyCamRotation(); return; }
   if (CAM.mode === 'Cinematic') cinematicUpdate(dtReal);
   else if (CAM.mode === 'Follow koi') followUpdate(dtReal);
   else {
@@ -6376,952 +6368,6 @@ const AUDIO = {
   },
 };
 window.AUDIO = AUDIO;
-// ---------- first-person hand: SDF sculpt -> surface nets -> skinned mesh ----------
-// Hand frame (bind pose, metres): wrist joint at the origin, -Z toward the fingertips, +Y dorsal (back of the hand),
-// thumb toward -X (a right hand, palm down). Bones: arm, palm, thumb x3, four fingers x3.
-const HB = { ARM: 0, PALM: 1, T0: 2, T1: 3, T2: 4, F: (f, k) => 5 + f * 3 + k, N: 17 };
-const HAND_FING = [
-  // MCP joint, bind spread (rad, + toward the thumb), phalanx lengths, radii (base, PIP, DIP, tip), knuckle radii (MCP, PIP, DIP)
-  { mcp: [-0.0290, -0.0006, -0.0960], spread: 0.075, len: [0.0345, 0.0210, 0.0175], r: [0.0096, 0.0087, 0.0079, 0.0068], jr: [0.0104, 0.0089, 0.0080] },
-  { mcp: [-0.0092, 0.0004, -0.1000], spread: 0.005, len: [0.0385, 0.0240, 0.0185], r: [0.0099, 0.0090, 0.0081, 0.0069], jr: [0.0107, 0.0092, 0.0082] },
-  { mcp: [0.0106, -0.0002, -0.0955], spread: -0.07, len: [0.0356, 0.0228, 0.0180], r: [0.0094, 0.0085, 0.0077, 0.0066], jr: [0.0101, 0.0087, 0.0078] },
-  { mcp: [0.0280, -0.0022, -0.0870], spread: -0.16, len: [0.0280, 0.0170, 0.0160], r: [0.0084, 0.0076, 0.0069, 0.0059], jr: [0.0091, 0.0078, 0.0070] },
-];
-const HAND_THUMB = { cmc: [-0.0176, -0.0122, -0.0150], rot: [-0.13, 0.6, 1.0], len: [0.044, 0.0315, 0.0268], r: [0.0118, 0.0112, 0.0102, 0.0087], jr: [0.0122, 0.0117, 0.0107],
-  rot1: [-0.05, 0.1, 0.0], rot2: [-0.1, 0.0, 0.0] };
-const sgnS = (x) => (x >= 0 ? smoothstep(0, 1, x) : -smoothstep(0, 1, -x));
-function sdRoundCone(px, py, pz, ax, ay, az, bx, by, bz, r1, r2) {
-  const bax = bx - ax, bay = by - ay, baz = bz - az;
-  const l2 = bax * bax + bay * bay + baz * baz, rr = r1 - r2, a2 = l2 - rr * rr, il2 = 1 / l2;
-  const pax = px - ax, pay = py - ay, paz = pz - az;
-  const y = pax * bax + pay * bay + paz * baz, z = y - l2;
-  const qx = pax * l2 - bax * y, qy = pay * l2 - bay * y, qz = paz * l2 - baz * y;
-  const x2 = qx * qx + qy * qy + qz * qz, y2 = y * y * l2, z2 = z * z * l2;
-  const k = Math.sign(rr) * rr * rr * x2;
-  if (Math.sign(z) * a2 * z2 > k) return Math.sqrt(x2 + z2) * il2 - r2;
-  if (Math.sign(y) * a2 * y2 < k) return Math.sqrt(x2 + y2) * il2 - r1;
-  return (Math.sqrt(x2 * a2 * il2) + y * rr) * il2 - r1;
-}
-function hsmin(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
-function hsmax(a, b, k) { return -hsmin(-a, -b, k); }
-
-function buildHandSkeleton() {
-  const bones = [];
-  for (let i = 0; i < HB.N; i++) { const b = new THREE.Bone(); b.name = 'h' + i; bones.push(b); }
-  bones[HB.ARM].add(bones[HB.PALM]);
-  const e = new THREE.Euler();
-  const T = HAND_THUMB;
-  bones[HB.PALM].add(bones[HB.T0]); bones[HB.T0].position.fromArray(T.cmc); bones[HB.T0].quaternion.setFromEuler(e.set(T.rot[0], T.rot[1], T.rot[2], 'YXZ'));
-  bones[HB.T0].add(bones[HB.T1]); bones[HB.T1].position.set(0, 0, -T.len[0]); bones[HB.T1].quaternion.setFromEuler(e.set(T.rot1[0], T.rot1[1], T.rot1[2], 'YXZ'));
-  bones[HB.T1].add(bones[HB.T2]); bones[HB.T2].position.set(0, 0, -T.len[1]); bones[HB.T2].quaternion.setFromEuler(e.set(T.rot2[0], T.rot2[1], T.rot2[2], 'YXZ'));
-  HAND_FING.forEach((F, f) => {
-    const b0 = bones[HB.F(f, 0)], b1 = bones[HB.F(f, 1)], b2 = bones[HB.F(f, 2)];
-    bones[HB.PALM].add(b0); b0.position.fromArray(F.mcp); b0.quaternion.setFromEuler(e.set(0, F.spread, 0, 'YXZ'));
-    b0.add(b1); b1.position.set(0, 0, -F.len[0]);
-    b1.add(b2); b2.position.set(0, 0, -F.len[1]);
-  });
-  bones.forEach((b) => { b.userData.bindQ = b.quaternion.clone(); });
-  bones[HB.ARM].updateMatrixWorld(true);
-  return bones;
-}
-
-// primitives: smooth-unioned in order; each belongs to a bone (bone-local coordinates) and knows its skinning neighbours
-function handPrimitives(bones) {
-  const P = [];
-  const I = new THREE.Matrix4();
-  const add = (o) => { o.inv = new THREE.Matrix4().copy(bones[o.bone].matrixWorld).invert(); P.push(o); return o; };
-  // --- palm (palm bone = hand frame at bind) ---
-  add({ kind: 'ell', bone: HB.PALM, c: [-0.002, -0.0040, -0.054], r: [0.0362, 0.0135, 0.0475], k: 0.012, part: 1, thin: 0.3 });
-  HAND_FING.forEach((F, f) => {
-    const m = F.mcp;
-    add({ kind: 'cone', bone: HB.PALM, a: [m[0] * 0.55, 0.0012, -0.014], b: [m[0], m[1] + 0.0006, m[2] + 0.003], ra: 0.0074, rb: 0.0084, k: 0.011, part: 1, thin: 0.35, child: HB.F(f, 0), blend: 0.009 });
-  });
-  HAND_FING.forEach((F, f) => {
-    const m = F.mcp;
-    add({ kind: 'sph', bone: HB.PALM, c: [m[0], m[1] + 0.0012, m[2] + 0.001], r: F.jr[0], k: 0.006, part: 3 + f, thin: 0.5, knuckle: HB.F(f, 0), along: 0 });
-  });
-  add({ kind: 'ell', bone: HB.PALM, c: [-0.0222, -0.0125, -0.0345], r: [0.0172, 0.0148, 0.0300], yaw: 0.38, k: 0.011, part: 1, thin: 0.4, share: HB.T0, shareW: 0.35 });
-  add({ kind: 'ell', bone: HB.PALM, c: [0.0222, -0.0100, -0.0500], r: [0.0125, 0.0120, 0.0370], k: 0.01, part: 1, thin: 0.45 });
-  add({ kind: 'cone', bone: HB.PALM, a: [-0.0255, -0.0098, -0.0872], b: [0.0250, -0.0102, -0.0828], ra: 0.0091, rb: 0.0084, k: 0.009, part: 1, thin: 0.5 });
-  // --- wrist and forearm (arm bone), slightly flattened ---
-  add({ kind: 'cone', bone: HB.ARM, a: [0, -0.0022, -0.006], b: [0, -0.0022, 0.105], ra: 0.0288, rb: 0.0338, sy: 1.45, k: 0.012, part: 0, thin: 0.15, wrist: true });
-  add({ kind: 'sph', bone: HB.ARM, c: [0.0232, 0.0042, 0.021], r: 0.0056, k: 0.008, part: 0, thin: 0.15, wrist: true });
-  // --- thumb ---
-  const T = HAND_THUMB;
-  let along = -T.len[0];
-  add({ kind: 'cone', bone: HB.T0, a: [0, 0, 0], b: [0, 0, -T.len[0]], ra: T.r[0], rb: T.r[1], sy: 1.05, k: 0.011, part: 2, thin: 0.5, parent: HB.PALM, child: HB.T1, blend: 0.012, len: T.len[0], along0: along });
-  add({ kind: 'sph', bone: HB.T1, c: [0, 0, 0], r: T.jr[1], k: 0.004, part: 2, thin: 0.8, joint: [HB.T0, HB.T1], along: 0 });
-  add({ kind: 'cone', bone: HB.T1, a: [0, 0, 0], b: [0, 0, -T.len[1]], ra: T.r[1] * 0.96, rb: T.r[2] * 0.97, sy: 1.1, k: 0.004, part: 2, thin: 0.85, parent: HB.T0, child: HB.T2, blend: 0.006, len: T.len[1], along0: 0 });
-  add({ kind: 'sph', bone: HB.T2, c: [0, 0, 0], r: T.jr[2], k: 0.004, part: 2, thin: 0.9, joint: [HB.T1, HB.T2], along: T.len[1] });
-  add({ kind: 'cone', bone: HB.T2, a: [0, 0, 0], b: [0, 0, -T.len[2]], ra: T.r[2] * 0.97, rb: T.r[3], sy: 1.12, k: 0.004, part: 2, thin: 1, parent: HB.T1, blend: 0.006, len: T.len[2], along0: T.len[1], nail: true });
-  add({ kind: 'ell', bone: HB.T2, c: [0, -T.r[3] * 0.3, -T.len[2] * 0.58], r: [T.r[3] * 0.98, T.r[3] * 0.72, T.len[2] * 0.42], k: 0.004, part: 2, thin: 1, pad: true, along0: T.len[1] });
-  // --- fingers ---
-  HAND_FING.forEach((F, f) => {
-    const b0 = HB.F(f, 0), b1 = HB.F(f, 1), b2 = HB.F(f, 2);
-    add({ kind: 'cone', bone: b0, a: [0, 0, 0], b: [0, 0, -F.len[0]], ra: F.r[0], rb: F.r[1], sy: 1.1, k: 0.0082, part: 3 + f, thin: 0.9, parent: HB.PALM, child: b1, blend: 0.007, len: F.len[0], along0: 0 });
-    add({ kind: 'sph', bone: b1, c: [0, 0.0005, 0], r: F.jr[1], k: 0.0025, part: 3 + f, thin: 0.95, joint: [b0, b1], along: F.len[0] });
-    add({ kind: 'cone', bone: b1, a: [0, 0, 0], b: [0, 0, -F.len[1]], ra: F.r[1], rb: F.r[2], sy: 1.1, k: 0.0025, part: 3 + f, thin: 1, parent: b0, child: b2, blend: 0.005, len: F.len[1], along0: F.len[0] });
-    add({ kind: 'sph', bone: b2, c: [0, 0.0004, 0], r: F.jr[2], k: 0.0025, part: 3 + f, thin: 1, joint: [b1, b2], along: F.len[0] + F.len[1] });
-    add({ kind: 'cone', bone: b2, a: [0, 0, 0], b: [0, 0, -F.len[2]], ra: F.r[2], rb: F.r[3], sy: 1.12, k: 0.0025, part: 3 + f, thin: 1, parent: b1, blend: 0.005, len: F.len[2], along0: F.len[0] + F.len[1], nail: true });
-    add({ kind: 'ell', bone: b2, c: [0, -F.r[3] * 0.32, -F.len[2] * 0.6], r: [F.r[3] * 0.97, F.r[3] * 0.7, F.len[2] * 0.4], k: 0.003, part: 3 + f, thin: 1, pad: true, along0: F.len[0] + F.len[1] });
-  });
-  // evaluators in the hand frame; AABB in the hand frame for culling
-  const corner = new THREE.Vector3();
-  for (const p of P) {
-    const e = p.inv.elements;
-    const m = [e[0], e[4], e[8], e[12], e[1], e[5], e[9], e[13], e[2], e[6], e[10], e[14]];
-    p.m = m;
-    let lo, hi;
-    if (p.kind === 'cone') {
-      const R = Math.max(p.ra, p.rb), Ry = p.sy ? R / p.sy : R;
-      lo = [Math.min(p.a[0], p.b[0]) - R, Math.min(p.a[1], p.b[1]) - Ry, Math.min(p.a[2], p.b[2]) - R];
-      hi = [Math.max(p.a[0], p.b[0]) + R, Math.max(p.a[1], p.b[1]) + Ry, Math.max(p.a[2], p.b[2]) + R];
-    } else if (p.kind === 'sph') { lo = p.c.map((v) => v - p.r); hi = p.c.map((v) => v + p.r); }
-    else {
-      const c = Math.abs(Math.cos(p.yaw || 0)), s = Math.abs(Math.sin(p.yaw || 0));
-      const ex = [p.r[0] * c + p.r[2] * s, p.r[1], p.r[0] * s + p.r[2] * c];
-      lo = p.c.map((v, a) => v - ex[a]); hi = p.c.map((v, a) => v + ex[a]);
-    }
-    const W = bones[p.bone].matrixWorld, mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
-    for (let c = 0; c < 8; c++) {
-      corner.set(c & 1 ? hi[0] : lo[0], c & 2 ? hi[1] : lo[1], c & 4 ? hi[2] : lo[2]).applyMatrix4(W);
-      mn[0] = Math.min(mn[0], corner.x); mn[1] = Math.min(mn[1], corner.y); mn[2] = Math.min(mn[2], corner.z);
-      mx[0] = Math.max(mx[0], corner.x); mx[1] = Math.max(mx[1], corner.y); mx[2] = Math.max(mx[2], corner.z);
-    }
-    const mg = p.k + 0.002;
-    p.minR = p.kind === 'ell' ? Math.min(p.r[0], p.r[1], p.r[2]) : 0;
-    p.lo = mn.map((v) => v - mg); p.hi = mx.map((v) => v + mg);
-  }
-  // pack everything the distance function needs into one flat array (monomorphic, fast)
-  const S = HPS, D = new Float64Array(P.length * S);
-  P.forEach((p, i) => {
-    const o = i * S;
-    p.o = o;
-    D[o] = p.kind === 'cone' ? 0 : p.kind === 'sph' ? 1 : 2; D[o + 1] = p.k;
-    for (let j = 0; j < 12; j++) D[o + 2 + j] = p.m[j];
-    if (p.kind === 'cone') { D.set(p.a, o + 14); D.set(p.b, o + 17); D[o + 20] = p.ra; D[o + 21] = p.rb; D[o + 22] = p.sy || 0; D[o + 23] = p.nail ? 1 : 0; D[o + 24] = p.len || 0; }
-    else if (p.kind === 'sph') { D.set(p.c, o + 25); D[o + 28] = p.r; }
-    else { D.set(p.c, o + 25); D.set(p.r, o + 28); D[o + 31] = p.yaw || 0; D[o + 32] = p.minR; }
-    D.set(p.lo, o + 33); D.set(p.hi, o + 36);
-  });
-  P.D = D;
-  P.forEach((p) => { p.P = P; });
-  return P;
-}
-const HPS = 40;
-// raw distance of one primitive (packed at offset o of D) at hand-frame point (x, y, z); local coords go to L
-const _hl = [0, 0, 0];
-function hpDist(D, o, x, y, z, L) {
-  const lx = D[o + 2] * x + D[o + 3] * y + D[o + 4] * z + D[o + 5];
-  const ly = D[o + 6] * x + D[o + 7] * y + D[o + 8] * z + D[o + 9];
-  const lz = D[o + 10] * x + D[o + 11] * y + D[o + 12] * z + D[o + 13];
-  L[0] = lx; L[1] = ly; L[2] = lz;
-  const kind = D[o];
-  if (kind === 0) {
-    const sy = D[o + 22], ay = D[o + 15];
-    let d;
-    if (sy > 0) d = sdRoundCone(lx, ay + (ly - ay) * sy, lz, D[o + 14], ay, D[o + 16], D[o + 17], D[o + 18], D[o + 19], D[o + 20], D[o + 21]) / Math.sqrt(sy);
-    else d = sdRoundCone(lx, ly, lz, D[o + 14], ay, D[o + 16], D[o + 17], D[o + 18], D[o + 19], D[o + 20], D[o + 21]);
-    const len = D[o + 24];
-    if (D[o + 23] > 0 && lz < -len * 0.3) {
-      // flatter, gently curved nail plate on the dorsal side of the distal phalanx (fades in at the cuticle)
-      const t = -lz / len, r = D[o + 20] + (D[o + 21] - D[o + 20]) * (t > 1 ? 1 : t), Rn = 1.75 * r;
-      const oy = ly - (0.87 * r - Rn), w = smoothstep(-len * 0.3, -len * 0.3 - 0.0025, lz);
-      const dn = Math.sqrt(lx * lx + oy * oy) - Rn - (1 - w) * 0.01;
-      d = hsmax(d, dn, 0.0018);
-    }
-    return d;
-  }
-  if (kind === 1) { const dx = lx - D[o + 25], dy = ly - D[o + 26], dz = lz - D[o + 27]; return Math.sqrt(dx * dx + dy * dy + dz * dz) - D[o + 28]; }
-  let qx = lx - D[o + 25], qy = ly - D[o + 26], qz = lz - D[o + 27];
-  const yaw = D[o + 31];
-  if (yaw !== 0) { const c = Math.cos(yaw), s = Math.sin(yaw), rx = c * qx - s * qz; qz = s * qx + c * qz; qx = rx; }
-  const r0 = D[o + 28], r1 = D[o + 29], r2 = D[o + 30];
-  const ax = qx / r0, ay = qy / r1, az = qz / r2, bx = ax / r0, by = ay / r1, bz = az / r2;
-  const k0 = Math.sqrt(ax * ax + ay * ay + az * az), k1 = Math.sqrt(bx * bx + by * by + bz * bz);
-  return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -D[o + 32];
-}
-function handPrimDist(p, x, y, z, L = _hl) { return hpDist(p.D || p.P.D, p.o, x, y, z, L); }
-function handSDF(P, x, y, z) {
-  const D = P.D, n = P.length;
-  let d = 1;
-  for (let i = 0, o = 0; i < n; i++, o += HPS) {
-    if (x < D[o + 33] || y < D[o + 34] || z < D[o + 35] || x > D[o + 36] || y > D[o + 37] || z > D[o + 38]) continue;
-    d = hsmin(d, hpDist(D, o, x, y, z, _hl), D[o + 1]);
-  }
-  return d;
-}
-function surfaceNets(F, nx, ny, nz, ox, oy, oz, h) {
-  const verts = [], cell = new Int32Array((nx - 1) * (ny - 1) * (nz - 1)).fill(-1);
-  const E = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
-  const cv = new Float64Array(8), sxy = nx * ny;
-  for (let k = 0; k < nz - 1; k++) for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
-    const b = i + nx * j + sxy * k;
-    let m = 0;
-    for (let c = 0; c < 8; c++) { const v = F[b + (c & 1) + ((c >> 1) & 1) * nx + (c >> 2) * sxy]; cv[c] = v; if (v < 0) m |= 1 << c; }
-    if (m === 0 || m === 255) continue;
-    let sx = 0, sy = 0, sz = 0, n = 0;
-    for (let e = 0; e < 12; e++) {
-      const a = E[e][0], bb = E[e][1], va = cv[a], vb = cv[bb];
-      if ((va < 0) === (vb < 0)) continue;
-      const t = va / (va - vb);
-      sx += (a & 1) + t * ((bb & 1) - (a & 1)); sy += ((a >> 1) & 1) + t * (((bb >> 1) & 1) - ((a >> 1) & 1)); sz += (a >> 2) + t * ((bb >> 2) - (a >> 2)); n++;
-    }
-    cell[i + (nx - 1) * (j + (ny - 1) * k)] = verts.length / 3;
-    verts.push(ox + (i + sx / n) * h, oy + (j + sy / n) * h, oz + (k + sz / n) * h);
-  }
-  const cid = (i, j, k) => cell[i + (nx - 1) * (j + (ny - 1) * k)];
-  const idx = [];
-  const d2 = (a, b) => (verts[a * 3] - verts[b * 3]) ** 2 + (verts[a * 3 + 1] - verts[b * 3 + 1]) ** 2 + (verts[a * 3 + 2] - verts[b * 3 + 2]) ** 2;
-  const quad = (a, b, c, d, flip) => {
-    if (a < 0 || b < 0 || c < 0 || d < 0) return;
-    if (flip) { const t = b; b = d; d = t; }
-    if (d2(a, c) <= d2(b, d)) idx.push(a, b, c, a, c, d); else idx.push(a, b, d, b, c, d);
-  };
-  for (let k = 1; k < nz - 1; k++) for (let j = 1; j < ny - 1; j++) for (let i = 1; i < nx - 1; i++) {
-    const b = i + nx * j + sxy * k, in0 = F[b] < 0;
-    if ((F[b + 1] < 0) !== in0) quad(cid(i, j - 1, k - 1), cid(i, j, k - 1), cid(i, j, k), cid(i, j - 1, k), !in0);
-    if ((F[b + nx] < 0) !== in0) quad(cid(i - 1, j, k - 1), cid(i - 1, j, k), cid(i, j, k), cid(i, j, k - 1), !in0);
-    if ((F[b + sxy] < 0) !== in0) quad(cid(i - 1, j - 1, k), cid(i, j - 1, k), cid(i, j, k), cid(i - 1, j, k), !in0);
-  }
-  return { verts, idx };
-}
-function buildHandGeometry(bones, h = 0.0013) {
-  const P = handPrimitives(bones);
-  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
-  for (const p of P) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p.lo[a]); hi[a] = Math.max(hi[a], p.hi[a]); }
-  hi[2] = Math.min(hi[2], 0.082);            // the forearm ends inside the sleeve
-  const nx = Math.ceil((hi[0] - lo[0]) / h) + 3, ny = Math.ceil((hi[1] - lo[1]) / h) + 3, nz = Math.ceil((hi[2] - lo[2]) / h) + 3;
-  const ox = lo[0] - h, oy = lo[1] - h, oz = lo[2] - h;
-  const F = new Float32Array(nx * ny * nz).fill(1);
-  const sxy = nx * ny;
-  // accumulate each primitive only over its own box
-  const D = P.D;
-  for (const p of P) {
-    const o = p.o, kk = p.k;
-    const i0 = Math.max(0, Math.floor((p.lo[0] - ox) / h)), i1 = Math.min(nx - 1, Math.ceil((p.hi[0] - ox) / h));
-    const j0 = Math.max(0, Math.floor((p.lo[1] - oy) / h)), j1 = Math.min(ny - 1, Math.ceil((p.hi[1] - oy) / h));
-    const k0 = Math.max(0, Math.floor((p.lo[2] - oz) / h)), k1 = Math.min(nz - 1, Math.ceil((p.hi[2] - oz) / h));
-    for (let k = k0; k <= k1; k++) {
-      const z = oz + k * h;
-      for (let j = j0; j <= j1; j++) {
-        const y = oy + j * h, row = nx * j + sxy * k;
-        for (let i = i0; i <= i1; i++) { const x = ox + i * h; F[row + i] = hsmin(F[row + i], hpDist(D, o, x, y, z, _hl), kk); }
-      }
-    }
-  }
-  // cap the forearm inside the sleeve
-  for (let k = 0; k < nz; k++) { const z = oz + k * h; if (z > 0.078) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const o = i + nx * j + sxy * k; F[o] = Math.max(F[o], z - 0.078); } }
-  const { verts, idx } = surfaceNets(F, nx, ny, nz, ox, oy, oz, h);
-  const nv = verts.length / 3;
-  const sdf = (x, y, z) => Math.max(handSDF(P, x, y, z), z - 0.078);
-  // project onto the true surface, then normals from the field gradient
-  const nrm = new Float32Array(nv * 3), eps = 0.00025;
-  for (let v = 0; v < nv; v++) {
-    let x = verts[v * 3], y = verts[v * 3 + 1], z = verts[v * 3 + 2];
-    for (let it = 0; it < 2; it++) {
-      const d = sdf(x, y, z);
-      const gx = (sdf(x + eps, y, z) - d) / eps, gy = (sdf(x, y + eps, z) - d) / eps, gz = (sdf(x, y, z + eps) - d) / eps;
-      const g2 = gx * gx + gy * gy + gz * gz;
-      if (g2 < 1e-6) break;
-      const s = Math.max(-h * 0.6, Math.min(h * 0.6, d / g2));
-      x -= gx * s; y -= gy * s; z -= gz * s;
-    }
-    verts[v * 3] = x; verts[v * 3 + 1] = y; verts[v * 3 + 2] = z;
-    const gx = sdf(x + eps, y, z) - sdf(x - eps, y, z), gy = sdf(x, y + eps, z) - sdf(x, y - eps, z), gz = sdf(x, y, z + eps) - sdf(x, y, z - eps);
-    const gl = Math.hypot(gx, gy, gz) || 1;
-    nrm[v * 3] = gx / gl; nrm[v * 3 + 1] = gy / gl; nrm[v * 3 + 2] = gz / gl;
-  }
-  // skin weights and shading attributes from the owning primitive
-  const si = new Uint16Array(nv * 4), sw = new Float32Array(nv * 4), aHand = new Float32Array(nv * 4), aNail = new Float32Array(nv * 3);
-  const L = [0, 0, 0], ax = new THREE.Vector3(), yAxis = new THREE.Vector3();
-  for (let v = 0; v < nv; v++) {
-    const x = verts[v * 3], y = verts[v * 3 + 1], z = verts[v * 3 + 2];
-    let best = 0, bd = 1e9;
-    for (let i = 0; i < P.length; i++) {
-      const q = P[i];
-      if (x < q.lo[0] || y < q.lo[1] || z < q.lo[2] || x > q.hi[0] || y > q.hi[1] || z > q.hi[2]) continue;
-      const d = handPrimDist(q, x, y, z); if (d < bd) { bd = d; best = i; }
-    }
-    const p = P[best];
-    handPrimDist(p, x, y, z, L);
-    const w = new Map();
-    const put = (b, val) => { if (val > 1e-4) w.set(b, (w.get(b) || 0) + val); };
-    let along = 0;
-    if (p.kind === 'cone' && p.parent !== undefined) {
-      // phalanx: blend toward the parent near its base and the child near its tip
-      const a = -L[2], len = p.len;
-      const wp = 0.5 * (1 - sgnS(a / p.blend));
-      const wc = p.child !== undefined ? 0.5 * (1 - sgnS((len - a) / p.blend)) : 0;
-      put(p.parent, wp); if (p.child !== undefined) put(p.child, wc); put(p.bone, Math.max(0, 1 - wp - wc));
-      along = p.along0 + a;
-    } else if (p.kind === 'cone' && p.child !== undefined) {
-      // metacarpal ridge in the palm: hand the knuckle end to the finger
-      const bx = p.b[0] - p.a[0], by = p.b[1] - p.a[1], bz = p.b[2] - p.a[2], l2 = bx * bx + by * by + bz * bz;
-      const t = ((L[0] - p.a[0]) * bx + (L[1] - p.a[1]) * by + (L[2] - p.a[2]) * bz) / l2;
-      const wc = 0.5 * (1 - sgnS(((1 - t) * Math.sqrt(l2)) / p.blend));
-      put(p.child, wc); put(p.bone, 1 - wc);
-      along = -(1 - t) * Math.sqrt(l2);
-    } else if (p.knuckle !== undefined) {
-      const f = p.part - 3, dz = (HAND_FING[f].mcp[2] - z) / p.r;
-      const wk = clamp(0.45 + 0.35 * dz, 0.1, 0.9);
-      put(p.knuckle, wk); put(p.bone, 1 - wk);
-      along = HAND_FING[f].mcp[2] - z;
-    } else if (p.joint) {
-      const wj = 0.5 + 0.5 * sgnS(-L[2] / (p.r * 0.8));
-      put(p.joint[1], wj); put(p.joint[0], 1 - wj);
-      along = p.along - L[2];
-    } else if (p.pad) {
-      put(p.bone, 1); along = p.along0 - L[2];
-    } else if (p.share !== undefined) {
-      put(p.share, p.shareW); put(p.bone, 1 - p.shareW);
-    } else put(p.bone, 1);
-    // wrist: palm-owned skin near the joint follows the forearm a little, and vice versa
-    if (p.bone === HB.PALM && p.knuckle === undefined && z > -0.024) { const wa = 0.5 * (1 - sgnS(-z / 0.02)); for (const [b, val] of w) w.set(b, val * (1 - wa)); put(HB.ARM, wa); }
-    if (p.wrist && z < 0.024) { const wpl = 0.5 * (1 - sgnS(z / 0.02)); for (const [b, val] of w) w.set(b, val * (1 - wpl)); put(HB.PALM, wpl); }
-    const list = [...w.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-    const tot = list.reduce((s, e) => s + e[1], 0) || 1;
-    list.forEach(([b, val], k) => { si[v * 4 + k] = b; sw[v * 4 + k] = val / tot; });
-    // dorsal-ness: bind normal against the owning bone's +Y
-    yAxis.set(0, 1, 0).transformDirection(bones[p.bone].matrixWorld);
-    const dors = nrm[v * 3] * yAxis.x + nrm[v * 3 + 1] * yAxis.y + nrm[v * 3 + 2] * yAxis.z;
-    let thin = p.thin;
-    if (p.part === 1) thin = lerp(0.25, 0.55, smoothstep(0.022, 0.036, Math.abs(x + 0.002)));
-    aHand[v * 4] = p.part; aHand[v * 4 + 1] = along; aHand[v * 4 + 2] = dors; aHand[v * 4 + 3] = thin;
-    // nail coordinates on the distal phalanx (u across, v from the cuticle to the free edge)
-    aNail[v * 3 + 1] = -1;
-    if ((p.nail || p.pad) && dors > -0.2) {
-      const q = p.nail ? p : P[best - 1];
-      handPrimDist(q, x, y, z, L);
-      const len = q.len, t = clamp(-L[2] / len, 0, 1.3), r = lerp(q.ra, q.rb, Math.min(t, 1));
-      aNail[v * 3] = L[0] / (r * 0.8);
-      aNail[v * 3 + 1] = (-L[2] - len * 0.4) / (len * 0.6 + q.rb * 0.75);
-      aNail[v * 3 + 2] = L[1] / r;
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-  g.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
-  g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
-  g.setAttribute('aHand', new THREE.BufferAttribute(aHand, 4));
-  g.setAttribute('aNail', new THREE.BufferAttribute(aNail, 3));
-  g.setIndex(idx);
-  g.computeBoundingSphere();
-  g.userData = { nx, ny, nz, prims: P.length };
-  return { geom: g, prims: P };
-}
-// ---------- hand runtime: skin and sleeve materials, poses, camera-space spring, collision ----------
-const GLSL_HAND_VPARS = /* glsl */`
-attribute vec4 aHand;   // part (0 forearm 1 palm 2 thumb 3-6 fingers), distance along the digit (m), dorsal-ness, thinness
-attribute vec3 aNail;   // across the digit (-1..1), along the nail (0 cuticle .. 1 free edge; -1 = none), height
-varying vec4 vHand;
-varying vec3 vNail;
-varying vec3 vRest;
-`;
-const GLSL_HAND_FPARS = /* glsl */`
-varying vec4 vHand;
-varying vec3 vNail;
-varying vec3 vRest;
-uniform vec4 uDigitJ[5];   // per digit: first joint, second joint, tip, palmar base crease (along)
-uniform float uHandWet;
-float skinH = 0.0, nailM = 0.0, creaseM = 0.0;
-float hHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-float hNoise(vec3 x) {
-  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(mix(hHash(i), hHash(i + vec3(1.0, 0.0, 0.0)), f.x), mix(hHash(i + vec3(0.0, 1.0, 0.0)), hHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
-             mix(mix(hHash(i + vec3(0.0, 0.0, 1.0)), hHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(hHash(i + vec3(0.0, 1.0, 1.0)), hHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
-}
-float hsq(float x) { return x * x; }
-float hSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h); }
-vec3 hPerturb(vec3 pos, vec3 n, float h) {
-  vec3 dpx = dFdx(pos), dpy = dFdy(pos);
-  vec3 r1 = cross(dpy, n), r2 = cross(n, dpx);
-  float det = dot(dpx, r1);
-  vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-  return normalize(abs(det) * n - grad);
-}
-// dorsal venous network of the hand and wrist (hand frame x, z in metres)
-const vec4 HVEIN[17] = vec4[17](
-  vec4(-0.019, -0.082, -0.017, -0.059), vec4(-0.017, -0.059, -0.013, -0.035), vec4(-0.013, -0.035, -0.015, -0.014), vec4(-0.015, -0.014, -0.019, 0.010), vec4(-0.019, 0.010, -0.023, 0.045),
-  vec4(0.001, -0.085, 0.003, -0.061), vec4(0.003, -0.061, 0.001, -0.042),
-  vec4(0.019, -0.080, 0.020, -0.056), vec4(0.020, -0.056, 0.016, -0.035), vec4(0.016, -0.035, 0.012, -0.012), vec4(0.012, -0.012, 0.013, 0.015), vec4(0.013, 0.015, 0.018, 0.045),
-  vec4(-0.016, -0.050, -0.006, -0.043), vec4(-0.006, -0.043, 0.004, -0.041), vec4(0.004, -0.041, 0.013, -0.045),
-  vec4(-0.031, -0.042, -0.026, -0.023), vec4(-0.026, -0.023, -0.021, -0.005));
-`;
-const GLSL_HAND_ALBEDO = /* glsl */`
-{
-  float part = vHand.x, along = vHand.y, dors = vHand.z;
-  vec3 P = vRest * 1000.0;
-  float digit = step(1.5, part);
-  float dorsM = smoothstep(-0.15, 0.45, dors), palmM = smoothstep(0.0, -0.5, dors);
-  vec3 col = mix(vec3(0.62, 0.44, 0.36), vec3(0.54, 0.38, 0.30), dorsM);
-  float m1 = hNoise(P * 0.09), m2 = hNoise(P * 0.33 + 7.1), m3 = hNoise(P * 1.3 + 3.3);
-  col *= 0.93 + 0.12 * m1;
-  col = mix(col, col * vec3(1.1, 0.88, 0.86), 0.3 * smoothstep(0.6, 0.85, m2));
-  col *= 1.0 - 0.1 * dorsM * smoothstep(0.84, 0.92, hNoise(P * 0.9 + 11.0));
-  int di = int(clamp(part - 2.0, 0.0, 4.0) + 0.5);
-  vec4 J = uDigitJ[di];
-  float dP = along - J.x, dD = along - J.y, dT = J.z - along;
-  float red = digit * (0.55 * exp(-dP * dP / 1.6e-5) + 0.45 * exp(-dD * dD / 1.2e-5) + 0.9 * smoothstep(0.013, 0.0, dT));
-  red += step(2.5, part) * exp(-along * along / 3.0e-5) * 0.6 * dorsM;
-  red += (1.0 - digit) * palmM * 0.35 + digit * palmM * 0.25;
-  col = mix(col, col * vec3(1.16, 0.78, 0.74), clamp(red, 0.0, 1.0) * 0.5);
-  float lat = vNail.x, cr = 0.0;
-  if (digit > 0.5) {
-    // fine arcs over the knuckles, flexion creases on the palm side
-    // fade fine lines out where a pixel covers more than a fraction of their spacing
-    float o1 = dP + 0.0016 * lat * lat, o2 = dD + 0.0012 * lat * lat;
-    float ph1 = o1 * 3300.0 + m3 * 2.0, ph2 = o2 * 3600.0 + m3 * 2.0;
-    float aa1 = clamp(1.4 - fwidth(ph1) * 0.45, 0.0, 1.0), aa2 = clamp(1.4 - fwidth(ph2) * 0.45, 0.0, 1.0);
-    cr += smoothstep(0.0055, 0.0015, abs(o1)) * dorsM * mix(0.25, smoothstep(0.2, 1.0, sin(ph1)), aa1) * 0.55;
-    cr += smoothstep(0.004, 0.001, abs(o2)) * dorsM * mix(0.25, smoothstep(0.3, 1.0, sin(ph2)), aa2) * 0.4;
-    float cw = 0.00045 + fwidth(along) * 0.7;
-    float pc = exp(-hsq((dP + 0.0012) / cw)) + exp(-hsq((dP - 0.0014) / cw)) + exp(-hsq((dD - 0.0004) / cw));
-    pc += step(2.5, part) * exp(-hsq((along - J.w) / cw));
-    cr += pc * palmM * 0.8;
-  } else if (part > 0.5) {
-    vec2 q = vRest.xz;
-    float heart = abs(q.y - (-0.0805 - 0.0105 * pow(clamp((0.036 - q.x) / 0.05, 0.0, 1.2), 2.0))) + step(q.x, -0.016);
-    float head = abs(q.y - (-0.0716 + 0.33 * (q.x + 0.03))) + step(0.022, q.x) + step(q.x, -0.031);
-    vec2 lq = (q - vec2(-0.0215, -0.035)) / vec2(0.020, 0.042);
-    float life = abs(length(lq) - 1.0) * 0.02 + step(lq.x, 0.1) + step(0.3, lq.y);
-    cr += smoothstep(0.0011, 0.0003, min(min(heart, head), life)) * palmM * 1.2;
-  }
-  // nails: bed, lunula, free edge, cuticle fold
-  float nv = vNail.y;
-  if (nv > -0.5) {
-    float cut = nv - 0.14 * lat * lat;
-    nailM = smoothstep(-0.01, 0.04, cut) * smoothstep(1.02, 0.96, nv) * smoothstep(1.02, 0.88, abs(lat)) * smoothstep(0.15, 0.45, dors);
-    float fold = smoothstep(0.07, 0.0, abs(cut + 0.03)) * smoothstep(0.15, 0.45, dors) * smoothstep(1.1, 0.9, abs(lat));
-    float lun = smoothstep(0.24, 0.12, cut);
-    vec3 nc = mix(vec3(0.74, 0.45, 0.42), vec3(0.83, 0.7, 0.66), lun * 0.55);
-    nc = mix(nc, vec3(0.88, 0.84, 0.77), smoothstep(0.84, 0.93, nv));
-    nc *= 0.96 + 0.05 * sin(lat * 38.0 + m3 * 2.0);
-    col = mix(col, col * vec3(1.05, 0.86, 0.83), fold * 0.5);
-    col = mix(col, nc, nailM);
-    skinH += nailM * 0.00022 - fold * 0.0001;
-  }
-  // veins on the back of the hand and wrist
-  if (part < 1.5 && dors > 0.05) {
-    vec2 q = vRest.xz + (vec2(hNoise(P * 0.25), hNoise(P * 0.25 + 5.0)) - 0.5) * 0.0024;
-    float vd = 1.0;
-    for (int i = 0; i < 17; i++) vd = min(vd, hSeg(q, HVEIN[i].xy, HVEIN[i].zw));
-    float vein = exp(-hsq(vd / 0.0017)) * smoothstep(0.05, 0.45, dors);
-    col = mix(col, col * vec3(0.86, 0.9, 1.05), vein * 0.3);
-    skinH += vein * 0.00016;
-  }
-  // pores and fine cross-hatched wrinkles
-  skinH += (hNoise(P * 2.4) * 0.6 + hNoise(P * 5.1) * 0.4 - 0.5) * 0.00003 * (1.0 - nailM);
-  float ch = sin(dot(P.xz, vec2(0.9, 0.44)) * 1.4 + m3 * 3.0) * sin(dot(P.xz, vec2(-0.5, 0.87)) * 1.3 + m1 * 3.0);
-  skinH -= smoothstep(0.7, 1.0, ch) * 0.000025 * dorsM;
-  skinH -= cr * 0.00007;
-  col *= 1.0 - cr * 0.13;
-  creaseM = clamp(cr, 0.0, 1.0);
-  col *= 1.0 - 0.12 * uHandWet;
-  diffuseColor.rgb = col;
-}
-`;
-const GLSL_HAND_ROUGH = /* glsl */`
-roughnessFactor = mix(0.5, 0.58, smoothstep(0.0, -0.6, vHand.z));
-roughnessFactor = mix(roughnessFactor, 0.64, creaseM);
-roughnessFactor = mix(roughnessFactor, 0.2, nailM);
-roughnessFactor = mix(roughnessFactor, 0.14, uHandWet * 0.85);
-`;
-const GLSL_HAND_NORMAL = /* glsl */`
-normal = hPerturb(-vViewPosition, normal, skinH);
-`;
-const GLSL_HAND_LIGHT = /* glsl */`
-{
-  // soft subsurface wrap past the terminator, and a red glow through thin fingers against the light
-  float ndl = dot(geometryNormal, directLight.direction);
-  float wrapT = max((ndl + 0.5) / 1.5, 0.0) - max(ndl, 0.0);
-  reflectedLight.directDiffuse += directLight.color * max(wrapT, 0.0) * material.diffuseColor * vec3(1.0, 0.45, 0.3) * 0.5;
-  float back = pow(clamp(dot(geometryViewDir, -directLight.direction), 0.0, 1.0), 3.0) * vHand.w;
-  reflectedLight.directDiffuse += directLight.color * back * material.diffuseColor * vec3(1.0, 0.25, 0.12) * 0.28;
-}
-`;
-// sleeve: indigo cotton twill with faded fold ridges
-const GLSL_SLEEVE_VPARS = /* glsl */`
-attribute float aFold;
-varying float vFold;
-varying vec3 vRest;
-`;
-const GLSL_SLEEVE_FPARS = /* glsl */`
-varying float vFold;
-varying vec3 vRest;
-float sleeveH = 0.0;
-float sHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-vec3 sPerturb(vec3 pos, vec3 n, float h) {
-  vec3 dpx = dFdx(pos), dpy = dFdy(pos);
-  vec3 r1 = cross(dpy, n), r2 = cross(n, dpx);
-  float det = dot(dpx, r1);
-  vec3 grad = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
-  return normalize(abs(det) * n - grad);
-}
-`;
-const GLSL_SLEEVE_ALBEDO = /* glsl */`
-{
-  float u = atan(vRest.y, vRest.x) * 0.047, v = vRest.z;
-  float tw = sin((u + v) * 6283.0 / 0.95);
-  float weft = sin(u * 6283.0 / 0.42) * sin(v * 6283.0 / 0.42);
-  vec2 cell = floor(vec2(u + v, u - v) / 0.0009);
-  float thread = sHash(cell);
-  sleeveH = (tw * 0.6 + weft * 0.25) * 0.00004;
-  vec3 indigo = vec3(0.028, 0.042, 0.095);
-  vec3 col = indigo * (0.82 + 0.3 * thread) * (1.0 + 0.18 * tw);
-  col = mix(col, vec3(0.1, 0.13, 0.2), clamp(vFold, 0.0, 1.0) * 0.55);
-  if (!gl_FrontFacing) col *= 0.45;
-  diffuseColor.rgb = col;
-}
-`;
-const GLSL_SLEEVE_NORMAL = /* glsl */`
-normal = sPerturb(-vViewPosition, normal, sleeveH);
-`;
-
-const HAND = {
-  built: false, mesh: null, sleeve: null, bones: null, mat: null, sleeveMat: null, geom: null,
-  on: false, mode: '', vis: 0,
-  // camera-space wrist spring, palm orientation and elbow
-  cp: new THREE.Vector3(0.35, -0.45, -0.3), cv: new THREE.Vector3(), cq: new THREE.Quaternion(), ce: new THREE.Vector3(0.3, -0.5, 0),
-  tp: new THREE.Vector3(0.35, -0.45, -0.3), tq: new THREE.Quaternion(), te: new THREE.Vector3(0.3, -0.5, 0),
-  omega: 9, qRate: 9,
-  pose: null, poseT: null, poseRate: 10,
-  lift: 0, liftNeed: 0, wet: 0, inWater: false, dripT: 0, wakeT: 0, uWet: { value: 0 }, padOffset: new THREE.Vector3(),
-  sph: [], sphW: null, prevTip: null,
-};
-function handPose(o = {}) {
-  return {
-    spread: (o.spread || [0.02, 0, -0.03, -0.06]).slice(), mcp: (o.mcp || [0.22, 0.28, 0.34, 0.42]).slice(),
-    pip: (o.pip || [0.3, 0.36, 0.42, 0.48]).slice(), dip: (o.dip || [0.16, 0.2, 0.22, 0.26]).slice(),
-    tFlex: o.tFlex ?? 0.05, tAbd: o.tAbd ?? 0.12, tTwist: o.tTwist ?? 0, tMcp: o.tMcp ?? 0.12, tIp: o.tIp ?? 0.18,
-  };
-}
-const HAND_POSES = {
-  relaxed: handPose(),
-  reach: handPose({ spread: [0.04, 0, -0.04, -0.09], mcp: [0.12, 0.16, 0.22, 0.3], pip: [0.2, 0.24, 0.3, 0.36], dip: [0.1, 0.12, 0.14, 0.18], tFlex: 0.0, tAbd: 0.18, tMcp: 0.08, tIp: 0.12 }),
-  // thumb pad on the index pad with room for a few pellets, the middle finger folded just behind, ring and little curled loosely
-  pinch: handPose({ spread: [-0.02, 0.0, -0.02, -0.04], mcp: [0.85, 0.91, 0.9, 1.0], pip: [0.67, 1.25, 1.1, 1.15], dip: [0.5, 0.45, 0.55, 0.6], tFlex: 0.25, tAbd: 0.0, tTwist: 0.02, tMcp: 0.39, tIp: 0.07 }),
-  flat: handPose({ spread: [-0.03, 0, 0.025, 0.06], mcp: [0.1, 0.08, 0.1, 0.13], pip: [0.2, 0.18, 0.21, 0.24], dip: [0.12, 0.11, 0.12, 0.14], tFlex: 0.1, tAbd: -0.5, tMcp: 0.06, tIp: 0.08 }),
-};
-function copyPose(o, a) { for (let i = 0; i < 4; i++) { o.spread[i] = a.spread[i]; o.mcp[i] = a.mcp[i]; o.pip[i] = a.pip[i]; o.dip[i] = a.dip[i]; } o.tFlex = a.tFlex; o.tAbd = a.tAbd; o.tTwist = a.tTwist; o.tMcp = a.tMcp; o.tIp = a.tIp; return o; }
-function lerpPose(o, a, b, t) {
-  for (let i = 0; i < 4; i++) { o.spread[i] = lerp(a.spread[i], b.spread[i], t); o.mcp[i] = lerp(a.mcp[i], b.mcp[i], t); o.pip[i] = lerp(a.pip[i], b.pip[i], t); o.dip[i] = lerp(a.dip[i], b.dip[i], t); }
-  for (const k of ['tFlex', 'tAbd', 'tTwist', 'tMcp', 'tIp']) o[k] = lerp(a[k], b[k], t);
-  return o;
-}
-const _hq = new THREE.Quaternion(), _he = new THREE.Euler();
-function applyHandPose(P) {
-  const B = HAND.bones;
-  for (let f = 0; f < 4; f++) {
-    const b0 = B[HB.F(f, 0)];
-    b0.quaternion.copy(b0.userData.bindQ).multiply(_hq.setFromEuler(_he.set(-P.mcp[f], P.spread[f], 0, 'YXZ')));
-    B[HB.F(f, 1)].quaternion.setFromEuler(_he.set(-P.pip[f], 0, 0));
-    B[HB.F(f, 2)].quaternion.setFromEuler(_he.set(-P.dip[f], 0, 0));
-  }
-  B[HB.T0].quaternion.copy(B[HB.T0].userData.bindQ).multiply(_hq.setFromEuler(_he.set(-P.tFlex, P.tAbd, P.tTwist, 'YXZ')));
-  B[HB.T1].quaternion.copy(B[HB.T1].userData.bindQ).multiply(_hq.setFromEuler(_he.set(-P.tMcp, 0, 0)));
-  B[HB.T2].quaternion.copy(B[HB.T2].userData.bindQ).multiply(_hq.setFromEuler(_he.set(-P.tIp, 0, 0)));
-}
-function softClamp(x, lo, hi, k) {
-  if (x > hi - k) return hi - k + k * Math.tanh((x - (hi - k)) / k);
-  if (x < lo + k) return lo + k - k * Math.tanh((lo + k - x) / k);
-  return x;
-}
-// wrist position, palm orientation and elbow position (world) -> arm bone (aimed at the elbow) and wrist rotation
-const _hax = new THREE.Vector3(), _hay = new THREE.Vector3(), _haz = new THREE.Vector3(), _hwv = new THREE.Vector3(), _ham = new THREE.Matrix4(), _haq = new THREE.Quaternion(), _hwe = new THREE.Euler();
-// forearm orientation (armQ) and the wrist's local rotation (wristQ) for a wanted palm orientation;
-// the forearm rolls (pronation/supination) so the wrist itself only flexes and deviates, within its range
-function wristSolve(wristW, palmQ, elbowW, armQ, wristQ, limit = true) {
-  _haz.subVectors(elbowW, wristW).normalize();
-  // a wrist bends at most ~75 degrees: past that the elbow drops instead
-  _hwv.set(0, 0, 1).applyQuaternion(palmQ);
-  const cb = _haz.dot(_hwv);
-  if (cb < 0.45) _haz.addScaledVector(_hwv, ((0.45 - cb) * (0.45 - cb)) / 0.76).normalize();   // eases in (C1)
-  _hax.set(1, 0, 0).applyQuaternion(palmQ);
-  _hay.crossVectors(_haz, _hax);
-  if (_hay.lengthSq() < 1e-8) { _hay.set(0, 1, 0).applyQuaternion(palmQ); _hay.addScaledVector(_haz, -_hay.dot(_haz)); }
-  _hay.normalize();
-  if (_hay.dot(_hwv.set(0, 1, 0).applyQuaternion(palmQ)) < 0) _hay.negate();
-  _hax.crossVectors(_hay, _haz);
-  armQ.setFromRotationMatrix(_ham.makeBasis(_hax, _hay, _haz));
-  wristQ.copy(armQ).invert().multiply(palmQ);
-  if (!limit) return wristQ;
-  _hwe.setFromQuaternion(wristQ, 'YXZ');
-  const fx = softClamp(_hwe.x, -1.2, 1.15, 0.35), dy = softClamp(_hwe.y, -0.55, 0.42, 0.15), tz = softClamp(_hwe.z, -0.25, 0.25, 0.1);
-  if (fx !== _hwe.x || dy !== _hwe.y || tz !== _hwe.z) wristQ.setFromEuler(_hwe.set(fx, dy, tz, 'YXZ'));
-  return wristQ;
-}
-// palm orientation the wrist can actually reach (for targets)
-const _fpA = new THREE.Quaternion(), _fpW = new THREE.Quaternion();
-function feasiblePalm(wristW, palmQ, elbowW, out) { wristSolve(wristW, palmQ, elbowW, _fpA, _fpW); return out.copy(_fpA).multiply(_fpW); }
-// stroking targets are already within the wrist's range (feasiblePalm); limiting them again would move the fingers off their seat
-const _plq = new THREE.Quaternion();
-function placeHand(wristW, palmQ, elbowW, limit = 1) {
-  const arm = HAND.bones[HB.ARM], palm = HAND.bones[HB.PALM];
-  wristSolve(wristW, palmQ, elbowW, _haq, palm.quaternion, true);
-  if (limit < 1) { _plq.copy(_haq).invert().multiply(palmQ); palm.quaternion.slerp(_plq, 1 - limit); }
-  arm.position.copy(wristW);
-  arm.quaternion.copy(_haq);
-}
-
-// sleeve radius along the forearm (before the 1.1 x 0.8 flattening): 3.75 cm at the cuff, widening toward the elbow
-const sleeveR = (z) => 0.0375 + 0.0175 * smoothstep(0.045, 0.42, z);
-function buildSleeveGeometry() {
-  const NU = 72, prof = [];
-  // profile: inner surface (back to front), rolled lip at the cuff, outer surface (front to back)
-  const z0 = 0.045, z1 = 0.3, th = 0.0026, NZ = 30;
-  for (let j = NZ; j >= 0; j--) prof.push([-th, z0 + (z1 - z0) * Math.pow(j / NZ, 1.35), 0]);
-  for (let k = 1; k < 6; k++) { const a = Math.PI * (k / 6); prof.push([-th / 2 - Math.cos(a) * th / 2, z0 - Math.sin(a) * th * 0.7, 1]); }
-  for (let j = 0; j <= NZ; j++) prof.push([0, z0 + (z1 - z0) * Math.pow(j / NZ, 1.35), 2]);
-  const pos = [], fold = [], idx = [];
-  const NV = prof.length;
-  for (let j = 0; j < NV; j++) {
-    const [off, z] = prof[j];
-    const r0 = sleeveR(z) + (z < z0 + 0.018 ? 0.0012 * smoothstep(z0 + 0.018, z0, z) : 0);
-    for (let i = 0; i <= NU; i++) {
-      const a = (i / NU) * Math.PI * 2;
-      const f = 0.55 * Math.sin(3 * a + z * 42 + 0.6 * Math.sin(z * 20)) * Math.exp(-sq((z - 0.11) / 0.07)) + 0.35 * Math.sin(5 * a - z * 60 + 1.7) * smoothstep(0.1, 0.3, z) + 0.3 * Math.sin(2 * a + z * 25);
-      const r = r0 * (1 + 0.045 * f) + off;
-      pos.push(Math.cos(a) * r * 1.1, Math.sin(a) * r * 0.8 + 0.002, z);
-      fold.push(smoothstep(0.35, 1.0, f));
-    }
-  }
-  for (let j = 0; j < NV - 1; j++) for (let i = 0; i < NU; i++) {
-    const a = j * (NU + 1) + i, b = a + 1, c = a + NU + 1, d = c + 1;
-    idx.push(a, c, b, b, c, d);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('aFold', new THREE.Float32BufferAttribute(fold, 1));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
-}
-function buildHand() {
-  if (HAND.built) return;
-  const bones = buildHandSkeleton();
-  const { geom } = buildHandGeometry(bones, 0.0014);
-  const T = HAND_THUMB;
-  const dj = [new THREE.Vector4(0, T.len[1], T.len[1] + T.len[2], -1)];
-  HAND_FING.forEach((F) => dj.push(new THREE.Vector4(F.len[0], F.len[0] + F.len[1], F.len[0] + F.len[1] + F.len[2], 0.017)));
-  HAND.mat = patchMaterial(new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, roughness: 0.55, metalness: 0, ior: 1.4, specularIntensity: 0.5,
-    sheen: 0.35, sheenRoughness: 0.55, sheenColor: new THREE.Color(0.55, 0.42, 0.36), envMapIntensity: 0.9,
-  }), {
-    key: 'hand', noWeather: true, extraUniforms: { uDigitJ: { value: dj }, uHandWet: HAND.uWet },
-    vertPars: GLSL_HAND_VPARS, vertEnd: 'vHand = aHand; vNail = aNail; vRest = position;',
-    fragPars: GLSL_HAND_FPARS, albedo: GLSL_HAND_ALBEDO, roughness: GLSL_HAND_ROUGH, normal: GLSL_HAND_NORMAL, lightExtra: GLSL_HAND_LIGHT,
-  });
-  const mesh = new THREE.SkinnedMesh(geom, HAND.mat);
-  mesh.add(bones[HB.ARM]);
-  mesh.updateMatrixWorld(true);
-  mesh.bind(new THREE.Skeleton(bones));
-  mesh.frustumCulled = false; mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.layers.set(LAYER.BOTH);
-  mesh.visible = false;
-  scene.add(mesh);
-  HAND.sleeveMat = patchMaterial(new THREE.MeshPhysicalMaterial({
-    color: 0xffffff, roughness: 0.92, metalness: 0, sheen: 1.0, sheenRoughness: 0.5, sheenColor: new THREE.Color(0.22, 0.27, 0.42), side: THREE.DoubleSide,
-  }), {
-    key: 'sleeve', noWeather: true, vertPars: GLSL_SLEEVE_VPARS, vertEnd: 'vFold = aFold; vRest = position;',
-    fragPars: GLSL_SLEEVE_FPARS, albedo: GLSL_SLEEVE_ALBEDO, normal: GLSL_SLEEVE_NORMAL,
-  });
-  const sleeve = new THREE.Mesh(buildSleeveGeometry(), HAND.sleeveMat);
-  sleeve.castShadow = true; sleeve.receiveShadow = true; sleeve.frustumCulled = false;
-  sleeve.layers.set(LAYER.BOTH);
-  bones[HB.ARM].add(sleeve);
-  HAND.mesh = mesh; HAND.sleeve = sleeve; HAND.bones = bones; HAND.geom = geom;
-  HAND.pose = handPose(); HAND.poseT = handPose();
-  // where the fingertip pad of the middle finger sits in the palm frame when the hand lies flat (stroking contact)
-  applyHandPose(HAND_POSES.flat);
-  bones[HB.ARM].updateMatrixWorld(true);
-  const Fm = HAND_FING[1];
-  HAND.padOffset.set(0, -Fm.r[3] * 0.95, -Fm.len[2] * 0.55).applyMatrix4(bones[HB.F(1, 2)].matrixWorld);
-  // collision spheres in bone space: [bone, x, y, z, r]
-  const S = [];
-  S.push([HB.PALM, -0.019, -0.004, -0.033, 0.0134], [HB.PALM, 0.0, -0.004, -0.040, 0.0134], [HB.PALM, 0.02, -0.003, -0.047, 0.0126],
-    [HB.PALM, -0.02, -0.003, -0.0775, 0.0124], [HB.PALM, -0.001, -0.003, -0.082, 0.0124], [HB.PALM, 0.019, -0.004, -0.075, 0.0118],
-    [HB.PALM, -0.025, -0.0105, -0.035, 0.0132]);
-  // the knuckles: the skin between them is thin, so a sphere there would reach outside it
-  HAND_FING.forEach((F) => S.push([HB.PALM, F.mcp[0], F.mcp[1] + 0.0012, F.mcp[2] + 0.001, F.jr[0] - 0.0004]));
-  S.push([HB.ARM, 0, -0.002, 0.012, 0.021], [HB.ARM, 0, -0.001, 0.045, 0.025]);
-  for (let z = 0.05; z <= 0.301; z += 0.035) S.push([HB.ARM, 0, 0.002, Math.min(z, 0.285), sleeveR(z) * 1.1 + 0.003]);
-  HAND_FING.forEach((F, f) => {
-    const [l0, l1, l2] = F.len, r = F.r;
-    S.push([HB.F(f, 0), 0, 0, -l0 * 0.3, r[0] + 0.0006], [HB.F(f, 0), 0, 0, -l0 * 0.7, (r[0] + r[1]) / 2 + 0.0006], [HB.F(f, 1), 0, 0, 0, F.jr[1] + 0.0006],
-      [HB.F(f, 1), 0, 0, -l1 * 0.5, (r[1] + r[2]) / 2 + 0.0006], [HB.F(f, 2), 0, 0, 0, F.jr[2] + 0.0006], [HB.F(f, 2), 0, -0.0006, -l2 * 0.45, (r[2] + r[3]) / 2 + 0.0006],
-      [HB.F(f, 2), 0, -0.0008, -(l2 - r[3] * 0.25), r[3] + 0.0007]);
-  });
-  S.push([HB.T0, 0, 0, -T.len[0] * 0.55, T.r[0] + 0.0008], [HB.T1, 0, 0, 0, T.jr[1] + 0.0006], [HB.T1, 0, 0, -T.len[1] * 0.5, (T.r[1] + T.r[2]) / 2 + 0.0006],
-    [HB.T2, 0, 0, 0, T.jr[2] + 0.0006], [HB.T2, 0, -0.0006, -T.len[2] * 0.45, (T.r[2] + T.r[3]) / 2 + 0.0006], [HB.T2, 0, -0.0008, -(T.len[2] - T.r[3] * 0.25), T.r[3] + 0.0007]);
-  HAND.sph = S;
-  HAND.sphW = new Float32Array(S.length * 3);
-  // the flat stroking hand's spheres in the palm frame, to seat the target pose on the koi's back
-  applyHandPose(HAND_POSES.flat);
-  bones[HB.ARM].position.set(0, 0, 0); bones[HB.ARM].quaternion.identity(); bones[HB.PALM].quaternion.identity();
-  bones[HB.ARM].updateMatrixWorld(true);
-  HAND.flatSph = S.filter((s) => s[0] !== HB.ARM).map((s) => { const v = new THREE.Vector3(s[1], s[2], s[3]).applyMatrix4(bones[s[0]].matrixWorld); return [v.x, v.y, v.z, s[4]]; });
-  HAND.built = true;
-}
-// world centres of the collision spheres (bones must be up to date)
-const _hs = new THREE.Vector3();
-function handSphereCentres() {
-  const S = HAND.sph, W = HAND.sphW, B = HAND.bones;
-  for (let i = 0; i < S.length; i++) {
-    const s = S[i];
-    _hs.set(s[1], s[2], s[3]).applyMatrix4(B[s[0]].matrixWorld);
-    W[i * 3] = _hs.x; W[i * 3 + 1] = _hs.y; W[i * 3 + 2] = _hs.z;
-  }
-  return W;
-}
-
-// ---------- analytic koi body field (local frame, the same profile the mesh is built from) ----------
-const KOI_PY_TOP = 2 / 0.9, KOI_PY_BOT = 2 / 0.76, KOI_PZ = 2 / 0.86;
-const _kn = new THREE.Vector3(), _kqi = new THREE.Quaternion(), _keu = new THREE.Euler();
-function koiLocalLat(f, s) { const sc = clamp(s, 0, 1.3); return f.amp * (0.05 + 0.95 * sc * sc) * Math.sin(5.7 * sc - (f.phase % (Math.PI * 2))) + f.bend * (sc - 0.3) * (sc - 0.3); }
-// the folded dorsal fin: height of its top edge (local y) along the back, from the same rays as the fin mesh; cached per fold
-const KOI_RIDGE = new Map(), RIDGE_N = 72, RIDGE_S0 = 0.3, RIDGE_S1 = 1.02;
-function koiRidgeTable(df, bf) {
-  const key = Math.round(df * 40) + (bf ? 1000 : 0);
-  let T = KOI_RIDGE.get(key);
-  if (T) return T;
-  T = new Float32Array(RIDGE_N).fill(-1);
-  const k = lerp(1, 0.14, Math.round(df * 40) / 40), sc = bf ? 1.3 : 1;
-  for (let i = 0; i <= 32; i++) {
-    const v = i / 32, s = lerp(0.335, 0.705, v), hx = koiX(s), hy = sampleTable(KOI_TOP, s) - 0.004;
-    const al = 0.5 + 0.45 * v, L = 0.026 + 0.078 * Math.pow(1 - v, 0.75);
-    for (let j = 0; j <= 16; j++) {
-      const u = j / 16, x = hx + (-Math.sin(al) * L * u - (1 - k) * L * 0.9 * u) * sc, y = hy + Math.cos(al) * L * k * u * sc;
-      const b = Math.round(((0.5 - x) / KOI_LEN - RIDGE_S0) / (RIDGE_S1 - RIDGE_S0) * (RIDGE_N - 1));
-      if (b >= 0 && b < RIDGE_N) T[b] = Math.max(T[b], y);
-    }
-  }
-  // fill gaps, then round the profile (a gaussian over ~2.5 bins plus a small margin) so a hand gliding over it has no corners
-  for (let b = 1; b < RIDGE_N; b++) if (T[b] < 0 && T[b - 1] >= 0) T[b] = Math.max(T[b], T[b - 1] - 0.002);
-  const S = T.slice(), base = S.map((v, b) => (v >= 0 ? v : sampleTable(KOI_TOP, RIDGE_S0 + (b / (RIDGE_N - 1)) * (RIDGE_S1 - RIDGE_S0)) - 0.01));
-  for (let b = 0; b < RIDGE_N; b++) {
-    let acc = 0, wsum = 0;
-    for (let o = -7; o <= 7; o++) { const q = clamp(b + o, 0, RIDGE_N - 1), w = Math.exp(-(o * o) / (2 * 2.5 * 2.5)); acc += base[q] * w; wsum += w; }
-    T[b] = Math.max(base[b], acc / wsum + 0.0015);
-  }
-  KOI_RIDGE.set(key, T);
-  return T;
-}
-function koiRidgeY(f, s) {
-  if (s < RIDGE_S0 || s > RIDGE_S1) return -1;
-  const T = koiRidgeTable(f.dorsalFlat, f.v.butterfly), x = (s - RIDGE_S0) / (RIDGE_S1 - RIDGE_S0) * (RIDGE_N - 1), i = Math.min(Math.floor(x), RIDGE_N - 2), t = x - i;
-  return lerp(T[i], T[i + 1], t);
-}
-// signed distance (m, approximate near the surface) from world point (x, y, z) to the koi body; outward normal (world) in nOut
-function koiBodyDist(f, x, y, z, nOut) {
-  const S = f.size;
-  let dx = x - f.pos.x, dy = y - f.pos.y, dz = z - f.pos.z;
-  const ch = Math.cos(f.heading), sh = Math.sin(f.heading), cp = Math.cos(f.pitch), sp = Math.sin(f.pitch), cr = Math.cos(f.roll), sr = Math.sin(f.roll);
-  const x1 = dx * ch - dz * sh, z1 = dx * sh + dz * ch;
-  const x2 = x1 * cp + dy * sp, y2 = -x1 * sp + dy * cp;
-  const y3 = y2 * cr + z1 * sr, z3 = -y2 * sr + z1 * cr;
-  const lx = x2 / S, ly = y3 / S;
-  const s = (0.5 - lx) / KOI_LEN, sc = clamp(s, 0, 1);
-  const lz = z3 / S - koiLocalLat(f, sc);
-  const g = f.girth;
-  const yc = KOI_MOUTH_Y * smoothstep(0.12, 0.0, sc);
-  const th0 = Math.atan2(lz, ly - yc);                           // angle from the dorsal line
-  const side = Math.abs(Math.sin(th0)), cth = Math.cos(th0);
-  const opc = Math.exp(-sq((sc - 0.232) / 0.008)) * smoothstep(0.2, 0.55, side) * smoothstep(-0.95, -0.4, cth);
-  const thE = Math.abs(th0) / (Math.PI * 2);
-  const eyeD = Math.hypot((sc - 0.105) / 0.028, (thE - 0.17) / 0.04);
-  const gill = Math.exp(-sq((sc - 0.2) / 0.032)) * smoothstep(0.35, 0.75, side) * (sc < 0.236 ? 1 : 0);
-  const bump = 0.0034 * opc + 0.0042 * Math.exp(-eyeD * eyeD) + 0.0032 * gill;
-  const wid = sampleTable(KOI_WID, sc) * g + bump;
-  const Zn = lz / wid;
-  const up = ly >= yc;
-  const ry = (up ? sampleTable(KOI_TOP, sc) * g : sampleTable(KOI_BOT, sc) * g) + bump;
-  const Yn = (ly - yc) / ry, py = up ? KOI_PY_TOP : KOI_PY_BOT;
-  const aY = Math.abs(Yn), aZ = Math.abs(Zn);
-  const F = Math.pow(aY, py) + Math.pow(aZ, KOI_PZ);
-  const gy = (py * Math.pow(aY, py - 1) * Math.sign(Yn)) / ry, gz = (KOI_PZ * Math.pow(aZ, KOI_PZ - 1) * Math.sign(Zn)) / wid;
-  const gl = Math.hypot(gy, gz) || 1;
-  let d = Math.max((F - 1) / gl, -Math.min(ry, wid));             // first-order distance in local units (bounded inside)
-  // beyond the nose or the peduncle: add the axial gap
-  if (s < 0 || s > 1) { const ax = (s < 0 ? -s : s - 1) * KOI_LEN; d = d > 0 ? Math.hypot(d, ax) : ax; }
-  else if (d < 0) d = Math.max(d, (s - 1) * KOI_LEN, -s * KOI_LEN);   // inside: nearest of the flank, the tail end and the nose
-  // the dorsal fin: a thin plate on the midline up to its top edge (folded or raised)
-  const rY = f.dorsalFlat > 0.02 ? koiRidgeY(f, s) : -1;
-  if (rY > 0 && ly > yc) {
-    const above = Math.max(ly - rY, 0), dr = Math.sqrt(lz * lz + above * above) - 0.0015;
-    if (dr < d) {
-      d = dr;
-      if (nOut) {
-        const l = Math.sqrt(lz * lz + above * above) || 1, gy2 = above / l, gz2 = lz / l;
-        const ny2 = gy2 * cr - gz2 * sr, nz2 = gy2 * sr + gz2 * cr, nx3 = -ny2 * sp, ny3 = ny2 * cp;
-        nOut.set(nx3 * ch + nz2 * sh, ny3, -nx3 * sh + nz2 * ch);
-        return d * S;
-      }
-    }
-  }
-  if (nOut) {
-    // local gradient (0, gy, gz) back to world: undo roll, pitch, heading
-    let ny = gy / gl, nz = gz / gl;
-    const ny2 = ny * cr - nz * sr, nz2 = ny * sr + nz * cr;
-    const nx3 = -ny2 * sp, ny3 = ny2 * cp;
-    nOut.set(nx3 * ch + nz2 * sh, ny3, -nx3 * sh + nz2 * ch);
-  }
-  return d * S;
-}
-// point inside the koi body (exact test on the profile), for the mesh-level metric
-function koiInside(f, x, y, z) { return koiBodyDist(f, x, y, z, null) < 0; }
-
-// ---------- rocks: bucketed top/bottom surfaces for vertical probes ----------
-const ROCK_GRID = 0.03;
-function rockIndex(rock) {
-  if (rock.idx) return rock.idx;
-  const g = rock.geom, p = g.attributes.position, ix = g.index ? g.index.array : null;
-  const b = g.boundingBox || (g.computeBoundingBox(), g.boundingBox);
-  const nx = Math.max(1, Math.ceil((b.max.x - b.min.x) / ROCK_GRID)), nz = Math.max(1, Math.ceil((b.max.z - b.min.z) / ROCK_GRID));
-  const cells = Array.from({ length: nx * nz }, () => []);
-  const tris = [];
-  const nT = ix ? ix.length / 3 : p.count / 3;
-  for (let t = 0; t < nT; t++) {
-    const a = ix ? ix[t * 3] : t * 3, bb = ix ? ix[t * 3 + 1] : t * 3 + 1, c = ix ? ix[t * 3 + 2] : t * 3 + 2;
-    const tri = [p.getX(a), p.getY(a), p.getZ(a), p.getX(bb), p.getY(bb), p.getZ(bb), p.getX(c), p.getY(c), p.getZ(c)];
-    const ti = tris.length; tris.push(tri);
-    const x0 = Math.min(tri[0], tri[3], tri[6]), x1 = Math.max(tri[0], tri[3], tri[6]), z0 = Math.min(tri[2], tri[5], tri[8]), z1 = Math.max(tri[2], tri[5], tri[8]);
-    for (let i = Math.max(0, Math.floor((x0 - b.min.x) / ROCK_GRID)); i <= Math.min(nx - 1, Math.floor((x1 - b.min.x) / ROCK_GRID)); i++)
-      for (let k = Math.max(0, Math.floor((z0 - b.min.z) / ROCK_GRID)); k <= Math.min(nz - 1, Math.floor((z1 - b.min.z) / ROCK_GRID)); k++) cells[i + k * nx].push(ti);
-  }
-  rock.idx = { b, nx, nz, cells, tris };
-  return rock.idx;
-}
-// heights of the rock surface above and below point (x, z): {top, bottom} or null
-const _rockHit = { top: 0, bottom: 0 };
-function rockSpan(rock, x, z) {
-  const R = rockIndex(rock), b = R.b;
-  if (x < b.min.x || x > b.max.x || z < b.min.z || z > b.max.z) return null;
-  const i = Math.min(R.nx - 1, Math.floor((x - b.min.x) / ROCK_GRID)), k = Math.min(R.nz - 1, Math.floor((z - b.min.z) / ROCK_GRID));
-  let top = -Infinity, bottom = Infinity;
-  for (const ti of R.cells[i + k * R.nx]) {
-    const t = R.tris[ti];
-    const x0 = t[0], z0 = t[2], e1x = t[3] - x0, e1z = t[5] - z0, e2x = t[6] - x0, e2z = t[8] - z0;
-    const det = e1x * e2z - e2x * e1z;
-    if (Math.abs(det) < 1e-12) continue;
-    const px = x - x0, pz = z - z0;
-    const u = (px * e2z - e2x * pz) / det, v = (e1x * pz - px * e1z) / det;
-    if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
-    const y = t[1] + u * (t[4] - t[1]) + v * (t[7] - t[1]);
-    if (y > top) top = y;
-    if (y < bottom) bottom = y;
-  }
-  if (top === -Infinity) return null;
-  _rockHit.top = top; _rockHit.bottom = bottom;
-  return _rockHit;
-}
-
-// ---------- collision: how far one sphere must move to clear (<= 0 when clear); push direction in `dir` ----------
-const HAND_MARGIN = 0.001;
-const _hn = new THREE.Vector3();
-function sphereLift(cx, cy, cz, r, dir = null) {
-  const rm = r + HAND_MARGIN;
-  let need = -1;
-  if (dir) dir.set(0, 1, 0);
-  // terrain (slope-corrected), straight up
-  const e = 0.015, th = terrainHeight(cx, cz);
-  const gx = (terrainHeight(cx + e, cz) - terrainHeight(cx - e, cz)) / (2 * e), gz = (terrainHeight(cx, cz + e) - terrainHeight(cx, cz - e)) / (2 * e);
-  const ny = 1 / Math.sqrt(1 + gx * gx + gz * gz);
-  need = Math.max(need, th + rm / Math.max(ny, 0.35) - cy);
-  let what = need > 0 ? 'ground' : '';
-  // rocks: vertical probes under the sphere, straight up
-  for (const rock of ROCKS) {
-    if (!rock.geom || cy - rm > rock.top || cy + rm < rock.bottom - 0.3) continue;
-    const b = rock.geom.boundingBox;
-    if (cx + rm < b.min.x || cx - rm > b.max.x || cz + rm < b.min.z || cz - rm > b.max.z) continue;
-    for (let k = 0; k < 9; k++) {
-      const a = (k / 8) * Math.PI * 2, dd = k === 8 ? 0 : r * 0.75;
-      const qx = cx + Math.cos(a) * dd, qz = cz + Math.sin(a) * dd;
-      const h = rockSpan(rock, qx, qz);
-      if (!h) continue;
-      const low = cy - Math.sqrt(Math.max(rm * rm - dd * dd, 0));
-      if (low < h.top && cy > h.bottom - rm && h.top - low > need) { need = h.top - low; what = 'rock@' + rock.x.toFixed(2) + ',' + rock.z.toFixed(2); }
-    }
-  }
-  // koi, in each fish's own frame: out along the body normal
-  const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
-  for (let k = 0; k < n; k++) {
-    const f = FISH[k];
-    const hx = cx - f.pos.x, hz = cz - f.pos.z, reach = f.size * 0.62 + rm;
-    if (hx * hx + hz * hz > reach * reach || cy - rm > f.pos.y + f.size * 0.3 || cy + rm < f.pos.y - f.size * 0.3) continue;
-    const d = koiBodyDist(f, cx, cy, cz, _hn);
-    if (d < rm && rm - d > need) { need = rm - d; what = 'koi ' + k; if (dir) dir.copy(_hn); }
-  }
-  sphereLift.what = what;
-  return need;
-}
-// push the whole hand until every sphere clears (up to 4 passes), then filter: rise at once, settle slowly
-const _hc = new THREE.Vector3(), _hcd = new THREE.Vector3(), _hct = new THREE.Vector3();
-function resolveHandCollisions(dt) {
-  const arm = HAND.bones[HB.ARM], S = HAND.sph;
-  _hct.set(0, 0, 0);
-  for (let it = 0; it < 4; it++) {
-    arm.updateMatrixWorld(true);
-    const W = handSphereCentres();
-    let worst = 0;
-    for (let i = 0; i < S.length; i++) {
-      const need = sphereLift(W[i * 3], W[i * 3 + 1], W[i * 3 + 2], S[i][4], _hcd);
-      if (need > worst) { worst = need; _hc.copy(_hcd).multiplyScalar(need + 1e-5); HAND.hitWhat = sphereLift.what + ' s' + i; }
-    }
-    if (worst <= 1e-6) break;
-    arm.position.add(_hc); _hct.add(_hc);
-  }
-  HAND.liftNeed = _hct.length();
-  if (!HAND.liftF) HAND.liftF = new THREE.Vector3();
-  if (_hct.length() >= HAND.liftF.length()) HAND.liftF.copy(_hct);
-  else HAND.liftF.lerp(_hct, 1 - Math.exp(-dt / 0.35));
-  HAND.lift = HAND.liftF.length();
-  _hc.subVectors(HAND.liftF, _hct);
-  if (_hc.lengthSq() > 1e-12) { arm.position.add(_hc); arm.updateMatrixWorld(true); }
-  return HAND.lift;
-}
-// deepest point of the skinned hand (and sleeve) inside a koi, the ground or a rock (metric only)
-function handMeshPenetration() {
-  const mesh = HAND.mesh, pos = HAND.geom.attributes.position, v = new THREE.Vector3();
-  mesh.skeleton.update();
-  let d = 0, what = '';
-  const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
-  const test = (x, y, z) => {
-    for (let k = 0; k < n; k++) {
-      const f = FISH[k];
-      if (Math.abs(x - f.pos.x) > f.size * 0.6 || Math.abs(z - f.pos.z) > f.size * 0.6 || Math.abs(y - f.pos.y) > f.size * 0.3) continue;
-      const q = koiBodyDist(f, x, y, z, null);
-      if (-q > d) { d = -q; what = 'koi ' + f.variety; }
-    }
-    const th = terrainHeight(x, z);
-    if (th - y > d) { d = th - y; what = 'ground'; }
-    for (const r of ROCKS) {
-      if (!r.geom || y > r.top || y < r.bottom) continue;
-      const b = r.geom.boundingBox;
-      if (x < b.min.x || x > b.max.x || z < b.min.z || z > b.max.z) continue;
-      const s = rockSpan(r, x, z);
-      if (s && y < s.top && y > s.bottom) { const q = Math.min(s.top - y, y - s.bottom); if (q > d) { d = q; what = 'rock'; } }
-    }
-  };
-  for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i); mesh.applyBoneTransform(i, v); test(v.x, v.y, v.z); }
-  const sp = HAND.sleeve.geometry.attributes.position, M = HAND.sleeve.matrixWorld;
-  HAND.sleeve.updateMatrixWorld(true);
-  for (let i = 0; i < sp.count; i += 2) { v.fromBufferAttribute(sp, i).applyMatrix4(M); test(v.x, v.y, v.z); }
-  return { d, what };
-}
-// lily pads under the hand drift out of the way
-function pushPadsFromHand() {
-  const W = HAND.sphW, S = HAND.sph;
-  for (let i = 0; i < S.length; i++) {
-    const cx = W[i * 3], cy = W[i * 3 + 1], cz = W[i * 3 + 2], r = S[i][4];
-    if (cy - r > WATER_Y + 0.015) continue;
-    for (const p of PADS) {
-      const dx = p.x - cx, dz = p.z - cz, d = Math.hypot(dx, dz), R = p.r * 0.95 + r;
-      if (d < R && d > 1e-5) { const push = R - d; p.x += (dx / d) * push; p.z += (dz / d) * push; p.vx += (dx / d) * push * 4; p.vz += (dz / d) * push * 4; }
-    }
-  }
-}
 // ---------- camera moves for the interactions (kneel on the pier, lean over the bank) ----------
 const CAMX = { on: false, t: 0, dur: 2, arc: 0, p0: new THREE.Vector3(), p1: new THREE.Vector3(), q0: new THREE.Quaternion(), q1: new THREE.Quaternion() };
 const _cxm = new THREE.Matrix4(), _cxe = new THREE.Euler();
@@ -7351,10 +6397,10 @@ function updateCamTransition(dtReal) {
   if (CAMX.t >= 1) { CAMX.on = false; applyCamRotation(); }
 }
 
-// ---------- feeding: pellets rubbed from the fingers, koi racing up to take them ----------
-const FEED = { excite: 0, on: false, phase: 'idle', t: 0, pellets: [], landed: false, toRelease: 0, released: 0, relAcc: 0, plipT: 0, quietT: 0, eaten: 0, rub: 0, pinch: new THREE.Vector3(), pinchV: new THREE.Vector3(), pinchPrev: new THREE.Vector3() };
+// ---------- feeding: handfuls of pellets tossed onto the water, koi racing up to take them ----------
+const FEED = { excite: 0, on: false, phase: 'idle', t: 0, pellets: [], landed: false, toRelease: 0, released: 0, relAcc: 0, plipT: 0, quietT: 0, eaten: 0, toss: 0, nextToss: 0 };
 const PELLET_MAX = 110;
-// kneeling places to feed from: the end of the pier and a few banks with deep water in front
+// a place to feed from when the view has no open water in front: kneeling at the end of the pier
 const FEED_SPOTS = [
   { pos: [1.0, 0.95, 1.72], look: [0.85, -0.05, 0.1] },
 ];
@@ -7374,109 +6420,83 @@ function buildPellets() {
   };
   pelletAir = mk(false); pelletFloat = mk(true);
 }
+// where a toss from this view lands: the water a little below the centre of the view, 0.6-2.6 m out
+const _ftO = new THREE.Vector3(), _ftT = new THREE.Vector3(), _ftD = new THREE.Vector3();
+function feedTarget(out) {
+  _ftD.set(0.04, -0.3, -1).normalize().transformDirection(camera.matrixWorld);
+  if (_ftD.y > -0.12) return null;
+  const t = (WATER_Y - camera.position.y) / _ftD.y;
+  out.copy(camera.position).addScaledVector(_ftD, t);
+  const d = Math.hypot(out.x - camera.position.x, out.z - camera.position.z);
+  return d > 0.6 && d < 2.6 ? out : null;
+}
 function feedViewOk() {
-  if (camState.under || CAM.mode === 'Cinematic') return false;
-  // where the pellets would land from the feeding pose
-  _v1.set(0.055, -0.16, -0.55).applyMatrix4(camera.matrixWorld);
+  if (camState.under || !freeCam()) return false;
   const h = camera.position.y - WATER_Y;
-  return h > 0.4 && h < 2.6 && pondSDF(_v1.x, _v1.z) < -0.3 && floorHeight(_v1.x, _v1.z) < -0.3;
+  return h > 0.4 && h < 2.6 && !!feedTarget(_v1) && pondSDF(_v1.x, _v1.z) < -0.3 && floorHeight(_v1.x, _v1.z) < -0.3;
 }
 function startFeed() {
-  if (!KOI.ready || STROKE.on) return;
+  if (!KOI.ready) return;
   AUDIO.start();
-  buildHand();
   const alive = FEED.pellets.length;
-  if (HAND.on && HAND.mode === 'feed' && FEED.phase === 'rub') { FEED.toRelease = Math.min(FEED.toRelease + 25, PELLET_MAX - alive + FEED.released); return; }
-  if (HAND.on) return;
+  if (FEED.phase === 'toss') { FEED.toRelease = Math.min(FEED.toRelease + 25, PELLET_MAX - alive + FEED.released); return; }
+  if (FEED.phase === 'travel') return;
   if (alive > PELLET_MAX - 20) { toast('Plenty of food on the water already'); return; }
   CAM.resumeWalk = CAM.mode === 'First person';
   FEED.on = true; FEED.t = 0; FEED.released = 0; FEED.relAcc = 0; FEED.quietT = 0;
-  FEED.toRelease = Math.min(50 + Math.floor(Math.random() * 20), PELLET_MAX - alive);
+  FEED.toRelease = Math.min(45 + Math.floor(Math.random() * 20), PELLET_MAX - alive);
   if (!feedViewOk()) {
     let best = FEED_SPOTS[0], bd = 1e9;
     for (const s of FEED_SPOTS) { const d = camera.position.distanceTo(_v1.fromArray(s.pos)); if (d < bd) { bd = d; best = s; } }
     camMoveTo(_v1.fromArray(best.pos).clone(), _v2.fromArray(best.look).clone(), 2.4);
     FEED.phase = 'travel';
-  } else { CAM.mode = 'Manual'; P.camMode = 'Manual'; P.tour = false; FEED.phase = 'reach'; }
-  HAND.on = true; HAND.mode = 'feed'; FEED.t = 0; HAND.follow = 0;
-  HAND.cp.set(0.36, -0.46, -0.24); HAND.cv.set(0, 0, 0); HAND.ce.set(0.34, -0.62, 0.05);
-  handFeedOrient(HAND.cq, 0);
-  copyPose(HAND.pose, HAND_POSES.reach);
+  } else beginToss();
   toast('Feeding the koi');
   if (window.GUI_REFRESH) GUI_REFRESH();
 }
-// camera-space palm orientation for feeding: fingers forward-left-down, back of the hand up, thumb toward the centre
-const _fo = { x: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(), m: new THREE.Matrix4() };
-function handFeedOrient(q, rub) {
-  const dF = _fo.z.set(-0.42, -0.24, -0.87).normalize();
-  _fo.y.set(0.38, 0.92, -0.08);
-  _fo.y.addScaledVector(dF, -_fo.y.dot(dF)).normalize();
-  _fo.z.copy(dF).negate();
-  _fo.x.crossVectors(_fo.y, _fo.z);
-  q.setFromRotationMatrix(_fo.m.makeBasis(_fo.x, _fo.y, _fo.z));
-  return q;
+function beginToss() {
+  FEED.phase = 'toss'; FEED.t = 0; FEED.toss = 0; FEED.nextToss = 0.15;
+  AUDIO.rattle();
 }
-const FEED_OFF = new THREE.Vector3(0.36, -0.46, -0.24), FEED_AT = new THREE.Vector3(0.1, -0.135, -0.46);
-const FEED_ELB_OFF = new THREE.Vector3(0.34, -0.62, 0.05), FEED_ELB_AT = new THREE.Vector3(0.28, -0.37, -0.2);
-function updateFeedHand(dt) {
+// three or four handfuls, each a small scatter arcing out from just below the view
+function updateFeedToss(dt) {
   FEED.t += dt;
-  const ph = FEED.phase;
-  if (ph === 'travel') {
-    HAND.tp.copy(FEED_OFF); HAND.te.copy(FEED_ELB_OFF); handFeedOrient(HAND.tq, 0); copyPose(HAND.poseT, HAND_POSES.reach);
-    if (!CAMX.on) { FEED.phase = 'reach'; FEED.t = 0; }
-    return;
-  }
-  if (ph === 'reach') {
-    const u = smootherstep(0, 1, FEED.t / 1.1);
-    HAND.tp.lerpVectors(FEED_OFF, FEED_AT, u); HAND.te.lerpVectors(FEED_ELB_OFF, FEED_ELB_AT, u);
-    handFeedOrient(HAND.tq, 0);
-    lerpPose(HAND.poseT, HAND_POSES.reach, HAND_POSES.pinch, smootherstep(0.2, 1, FEED.t / 1.1));
-    if (FEED.t > 0.05 && !FEED.rattled) { FEED.rattled = true; AUDIO.rattle(); }
-    if (FEED.t >= 1.1) { FEED.phase = 'rub'; FEED.t = 0; FEED.rattled = false; }
-    return;
-  }
-  if (ph === 'rub') {
-    // thumb rubs across the finger pads; pellets fall from between them
-    const w = Math.PI * 2 * 3.1, rt = FEED.t;
-    const ramp = smoothstep(0, 0.3, rt);
-    HAND.tp.copy(FEED_AT); HAND.tp.x += Math.sin(rt * 1.3) * 0.004; HAND.tp.y += Math.sin(rt * 0.9) * 0.003;
-    HAND.te.copy(FEED_ELB_AT);
-    handFeedOrient(HAND.tq, 0);
-    copyPose(HAND.poseT, HAND_POSES.pinch);
-    HAND.poseT.tFlex += Math.sin(rt * w) * 0.12 * ramp; HAND.poseT.tMcp += Math.sin(rt * w + 0.6) * 0.1 * ramp;
-    HAND.poseT.pip[0] += Math.sin(rt * w + Math.PI) * 0.06 * ramp; HAND.poseT.pip[1] += Math.sin(rt * w + Math.PI * 0.8) * 0.05 * ramp;
-    const rate = 21;
-    if (rt > 0.25 && FEED.released < FEED.toRelease) {
-      FEED.relAcc += dt * rate * (0.6 + 0.8 * Math.max(0, Math.sin(rt * w)));
-      while (FEED.relAcc >= 1 && FEED.released < FEED.toRelease) { FEED.relAcc -= 1; releasePellet(); }
+  if (FEED.phase === 'travel') { if (!CAMX.on) beginToss(); return; }
+  if (FEED.phase !== 'toss') return;
+  if (FEED.t >= FEED.nextToss && FEED.released < FEED.toRelease) {
+    if (!feedTarget(_ftT)) { FEED.toRelease = FEED.released; }
+    else {
+      _ftO.set(0.07 + (Math.random() - 0.5) * 0.04, -0.2, -0.28).applyMatrix4(camera.matrixWorld);
+      const n = Math.min(FEED.toRelease - FEED.released, 14 + Math.floor(Math.random() * 6));
+      for (let k = 0; k < n; k++) tossPellet(_ftO, _ftT);
+      FEED.toss++; FEED.nextToss = FEED.t + 0.5 + Math.random() * 0.25;
+      if (FEED.toss > 1 && Math.random() < 0.6) AUDIO.rattle();
     }
-    if (FEED.released >= FEED.toRelease && rt > 0.6) { FEED.phase = 'withdraw'; FEED.t = 0; }
-    return;
   }
-  if (ph === 'withdraw') {
-    const u = smootherstep(0, 1, FEED.t / 0.95);
-    HAND.tp.lerpVectors(FEED_AT, FEED_OFF, u); HAND.te.lerpVectors(FEED_ELB_AT, FEED_ELB_OFF, u);
-    handFeedOrient(HAND.tq, 0);
-    lerpPose(HAND.poseT, HAND_POSES.pinch, HAND_POSES.reach, smootherstep(0, 0.6, FEED.t / 0.95));
-    if (FEED.t >= 1.25) { FEED.phase = 'idle'; HAND.on = false; resumeWalk(); }
-  }
+  if (FEED.released >= FEED.toRelease) { FEED.phase = 'idle'; resumeWalk(); }
 }
-// pinch point (between thumb and index pads) in world space
-function handPinchPoint(out) {
-  const B = HAND.bones;
-  _v1.set(0, -0.0012, -(HAND_THUMB.len[2] - HAND_THUMB.r[3] * 0.6)).applyMatrix4(B[HB.T2].matrixWorld);
-  _v2.set(0, -0.0012, -(HAND_FING[0].len[2] - HAND_FING[0].r[3] * 0.6)).applyMatrix4(B[HB.F(0, 2)].matrixWorld);
-  return out.addVectors(_v1, _v2).multiplyScalar(0.5);
-}
-function releasePellet() {
-  const p = { x: FEED.pinch.x + (Math.random() - 0.5) * 0.006, y: FEED.pinch.y - 0.003, z: FEED.pinch.z + (Math.random() - 0.5) * 0.006,
-    vx: FEED.pinchV.x * 0.6 + (Math.random() - 0.5) * 0.12, vy: FEED.pinchV.y * 0.6 - Math.random() * 0.15, vz: FEED.pinchV.z * 0.6 + (Math.random() - 0.5) * 0.12,
-    state: 'air', age: 0, t: 0, fish: null, sx: 0.8 + Math.random() * 0.45, rot: Math.random() * 6.28, rot2: Math.random() * 6.28 };
-  FEED.pellets.push(p);
+// a pellet on a ballistic arc from o to (a jittered) target t
+function tossPellet(o, t) {
+  const T = 0.42 + Math.random() * 0.16;
+  const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * 0.16;
+  const tx = t.x + Math.cos(a) * r, tz = t.z + Math.sin(a) * r * 0.7;
+  const x = o.x + (Math.random() - 0.5) * 0.02, y = o.y + (Math.random() - 0.5) * 0.015, z = o.z + (Math.random() - 0.5) * 0.02;
+  const drag = (0.9 * T) / (1 - Math.exp(-0.9 * T));   // the air slows pellets sideways (see updatePellets)
+  FEED.pellets.push({ x, y, z, vx: ((tx - x) / T) * drag, vy: (WATER_Y - y) / T + 0.5 * 9.81 * T, vz: ((tz - z) / T) * drag,
+    state: 'air', age: 0, t: 0, fish: null, sx: 0.8 + Math.random() * 0.45, rot: Math.random() * 6.28, rot2: Math.random() * 6.28 });
   FEED.released++;
+}
+// back to walking after a feed started from the first-person view (quietly: no toast)
+function resumeWalk() {
+  if (!CAM.resumeWalk) return;
+  CAM.resumeWalk = false;
+  CAM.mode = P.camMode = 'First person';
+  if (window.GUI_REFRESH) GUI_REFRESH();
 }
 const _pm4 = new THREE.Matrix4(), _pq4 = new THREE.Quaternion(), _pe4 = new THREE.Euler(), _pv4 = new THREE.Vector3(), _ps4 = new THREE.Vector3();
 const _mouth = new THREE.Vector3();
+// sideways swim displacement of the spine at s (0 nose .. 1 peduncle), as in the body vertex shader
+function koiLocalLat(f, s) { const sc = clamp(s, 0, 1.3); return f.amp * (0.05 + 0.95 * sc * sc) * Math.sin(5.7 * sc - (f.phase % (Math.PI * 2))) + f.bend * (sc - 0.3) * (sc - 0.3); }
 function koiMouth(f, out) {
   const L = f.size, m = 0.5 + f.mouth * 0.044;
   _pe4.set(f.roll, f.heading, f.pitch, 'YZX'); _pq4.setFromEuler(_pe4);
@@ -7526,19 +6546,7 @@ function updatePellets(dt) {
       if (p.t > 4) { list.splice(i, 1); continue; }
     }
   }
-  // in-hand pellets while rubbing
   let na = 0, nf = 0;
-  const holding = HAND.on && HAND.mode === 'feed' && (FEED.phase === 'rub' || FEED.phase === 'reach') && FEED.released < FEED.toRelease;
-  if (holding) {
-    const left = Math.min(6, FEED.toRelease - FEED.released);
-    for (let k = 0; k < left; k++) {
-      const a = k * 2.1 + FEED.t * 3.1;
-      _pv4.set(FEED.pinch.x + Math.cos(a) * 0.004, FEED.pinch.y + 0.002 + (k % 2) * 0.003, FEED.pinch.z + Math.sin(a) * 0.004);
-      _pq4.setFromEuler(_pe4.set(a, a * 1.3, 0));
-      _pm4.compose(_pv4, _pq4, _ps4.set(0.0032, 0.0027, 0.0032));
-      pelletAir.setMatrixAt(na++, _pm4);
-    }
-  }
   for (const p of list) {
     _pq4.setFromEuler(_pe4.set(p.rot, p.rot2, 0));
     const s = 0.0031 * p.sx;
@@ -7558,7 +6566,7 @@ function scheduleFeedReaction(x, z) {
   const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
   for (let k = 0; k < n; k++) {
     const f = FISH[k];
-    if (f.dock || f.pose) continue;
+    if (f.pose) continue;
     const d = Math.hypot(f.pos.x - x, f.pos.z - z);
     f.feedT = 0.35 + (d / 1.7) * (0.6 + 0.8 * Math.random()) / (0.5 + 0.5 * env.koi);
   }
@@ -7584,7 +6592,7 @@ function updateFeedFish(dt) {
   for (const p of FEED.pellets) if (p.state === 'float') floating++;
   for (let k = 0; k < n; k++) {
     const f = FISH[k];
-    if (f.dock || f.pose) continue;
+    if (f.pose) continue;
     if (f.bubbleT > 0) {
       f.bubbleT -= dt;
       if (f.bubbleT <= 0) {
@@ -7653,439 +6661,14 @@ function endFeeding() {
   for (let k = 0; k < n; k++) { const f = FISH[k]; f.feeding = false; f.feedT = 0; f.feedTarget = null; f.attractW = 0; f.forceSurface = false; f.feedBoost = 0; f.mouthForce = 0; f.feedDist = undefined; f.snap = 0; f.approach = 0; }
   if (koiCtl.attract === feedAttract) koiCtl.attract = null;
   FEED.landed = false; FEED.quietT = 0;
-  if (!HAND.on) FEED.on = false;
+  if (FEED.phase === 'idle') FEED.on = false;
 }
 
-// ---------- stroking: lean over the bank, a calm koi glides in and lies alongside ----------
-const STROKE = { on: false, phase: '', t: 0, fish: null, spot: null, s: 0.2, n: 0, roll: 0, rollSign: 1, userS: 0.2, userT: 0, drag: false, lx: 0, ly: 0, axis: new THREE.Vector2(), ended: 0 };
-const _sc = { n: new THREE.Vector2() };
-function strokeSpotCandidates() {
-  const out = [], pts = POND_PTS, step = Math.max(1, Math.round(pts.length / 160));
-  const bridge = (x, z) => { const ax = BRIDGE.a.x, az = BRIDGE.a.z, bx = BRIDGE.b.x - ax, bz = BRIDGE.b.z - az; const t = clamp(((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz), 0, 1); return Math.hypot(x - ax - bx * t, z - az - bz * t); };
-  for (let i = 0; i < pts.length; i += step) {
-    const [sx, sz] = pts[i];
-    pondSDFGrad(sx, sz, _sc.n);
-    const nx = _sc.n.x, nz = _sc.n.y;
-    const lx = sx - nx * 0.45, lz = sz - nz * 0.45;
-    if (floorHeight(lx, lz) > -0.3 || floorHeight(sx - nx * 0.24, sz - nz * 0.24) > -0.24 || beachW(sx, sz) > 0.15) continue;
-    if (Math.hypot(sx - FALLS.lip.x, sz - FALLS.lip.z) < 1.6 || bridge(sx, sz) < 1.3) continue;
-    if (Math.hypot(sx - PIER.x, sz - PIER.z) < 1.6) continue;
-    const cx = sx - nx * 0.2, cz = sz - nz * 0.2, cy = WATER_Y + 0.52;
-    let bad = false;
-    // boulders in the water near the koi, or tall ones where the eye would be
-    for (const r of ROCKS) { if ((pondSDF(r.x, r.z) < -0.12 && Math.hypot(r.x - lx, r.z - lz) < r.r + 0.75) || (r.top > 0.3 && Math.hypot(r.x - cx, r.z - cz) < r.r + 0.25)) { bad = true; break; } }
-    // posts, lotus and the turtle in the water; trunks, hedges and bushes on the bank
-    for (const o of OBSTACLES) { if (o.stroke) continue; const wet = pondSDF(o.x, o.z) < 0; if (wet ? Math.hypot(o.x - lx, o.z - lz) < o.r + 0.55 : Math.hypot(o.x - cx, o.z - cz) < o.r + 0.35) { bad = true; break; } }
-    if (bad) continue;
-    let pads = 0; for (const p of PADS) if (Math.hypot(p.ax - lx, p.az - lz) < 0.6) pads++;
-    out.push({ sx, sz, nx, nz, lx, lz, cam: new THREE.Vector3(cx, cy, cz), look: new THREE.Vector3(lx - nx * 0.08, -0.08, lz - nz * 0.08), pads });
-  }
-  return out;
-}
-function chooseStrokeSpot() {
-  const c = strokeSpotCandidates();
-  let best = null, bs = 1e9;
-  for (const s of c) { const score = s.cam.distanceTo(camera.position) + s.pads * 1.5; if (score < bs) { bs = score; best = s; } }
-  return best;
-}
-function chooseStrokeFish(spot) {
-  const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
-  let best = null, bs = 1e9;
-  for (let k = 0; k < n; k++) {
-    const f = FISH[k];
-    if (f.size < 0.36 || f.size > 0.66 || f.pose) continue;
-    const d = Math.hypot(f.pos.x - spot.lx, f.pos.z - spot.lz) + (f.v.butterfly ? 1.5 : 0) + (f.feeding ? 3 : 0);
-    if (d < bs) { bs = d; best = f; }
-  }
-  return best;
-}
-function startStroke() {
-  if (!KOI.ready || STROKE.on || (HAND.on && HAND.mode === 'feed')) return;
-  AUDIO.start();
-  buildHand();
-  CAM.resumeWalk = CAM.mode === 'First person';
-  const spot = chooseStrokeSpot();
-  const fish = spot && chooseStrokeFish(spot);
-  if (!fish) { toast('No koi close enough to stroke right now'); return; }
-  STROKE.on = true; STROKE.phase = 'lean'; STROKE.t = 0; STROKE.fish = fish; STROKE.spot = spot; STROKE.n = 0; STROKE.roll = 0; STROKE.userT = 0; STROKE.drag = false; STROKE.ended = 0;
-  camMoveTo(spot.cam, spot.look, 2.4);
-  // head toward the camera's right so the hand strokes from its shoulder, nose to tail
-  const hx = spot.nz, hz = -spot.nx;
-  const heading = Math.atan2(-hz, hx);
-  const p0 = new THREE.Vector2(fish.pos.x, fish.pos.z), p1 = new THREE.Vector2(spot.lx, spot.lz);
-  const dist = p0.distanceTo(p1);
-  const t0 = new THREE.Vector2(Math.cos(fish.heading), -Math.sin(fish.heading)).multiplyScalar(Math.max(dist * 0.6, 0.3));
-  const t1 = new THREE.Vector2(hx, hz).multiplyScalar(Math.max(dist * 0.9, 0.5));
-  fish.dock = { p0, p1, t0, t1, heading, t: 0, dur: clamp(dist / 0.4, 3, 8), y0: fish.pos.y, prevX: fish.pos.x, prevZ: fish.pos.z };
-  STROKE.rollSign = Math.sign(Math.sin(heading) * (spot.cam.x - spot.lx) + Math.cos(heading) * (spot.cam.z - spot.lz)) || 1;
-  OBSTACLES.push(STROKE.obstacle = { x: spot.lx, z: spot.lz, r: 0.42, top: 0.5, bottom: -2, stroke: true });
-  HAND.on = false; HAND.mode = 'stroke';
-  toast('A ' + fish.variety + ' comes to be stroked — drag along it');
-  if (window.GUI_REFRESH) GUI_REFRESH();
-}
-// the docked koi: glides in on a Hermite path, then hovers alongside with its back just under the surface
-function hermite2(o, p0, t0, p1, t1, u) {
-  const u2 = u * u, u3 = u2 * u;
-  const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
-  return o.set(h00 * p0.x + h10 * t0.x + h01 * p1.x + h11 * t1.x, h00 * p0.y + h10 * t0.y + h01 * p1.y + h11 * t1.y);
-}
-const _hp = new THREE.Vector2(), _hp2 = new THREE.Vector2();
-function updateDockedKoi(f, dt) {
-  const D = f.dock, L = f.size;
-  D.t += dt;
-  f.prev.copy(f.pos);
-  let arrive = 1;
-  if (D.t < D.dur) {
-    const u = smootherstep(0, 1, D.t / D.dur);
-    hermite2(_hp, D.p0, D.t0, D.p1, D.t1, u);
-    hermite2(_hp2, D.p0, D.t0, D.p1, D.t1, Math.min(u + 0.01, 1));
-    f.pos.x = _hp.x; f.pos.z = _hp.y;
-    const dx = _hp2.x - _hp.x, dz = _hp2.y - _hp.y;
-    if (dx * dx + dz * dz > 1e-10) { const want = Math.atan2(-dz, dx); f.heading = wrapAngle(f.heading + wrapAngle(want - f.heading) * (1 - Math.exp(-dt * 6))); }
-    arrive = smoothstep(0.55, 1, D.t / D.dur);
-  } else {
-    const tt = D.t - D.dur;
-    f.pos.x = D.p1.x + Math.sin(tt * 0.5) * 0.006; f.pos.z = D.p1.y + Math.cos(tt * 0.43) * 0.004;
-    f.heading = wrapAngle(f.heading + wrapAngle(D.heading + Math.sin(tt * 0.7) * 0.025 - f.heading) * (1 - Math.exp(-dt * 2)));
-  }
-  const spd = Math.hypot(f.pos.x - D.prevX, f.pos.z - D.prevZ) / Math.max(dt, 1e-4);
-  D.prevX = f.pos.x; D.prevZ = f.pos.z;
-  f.speed = spd;
-  f.dorsalFlat = lerp(f.dorsalFlat, arrive, 1 - Math.exp(-dt * 2.5));
-  f.roll = lerp(f.roll, STROKE.roll * STROKE.rollSign, 1 - Math.exp(-dt * 1.6));
-  f.pitch = lerp(f.pitch, 0, 1 - Math.exp(-dt * 3));
-  f.bend = lerp(f.bend, 0, 1 - Math.exp(-dt * 3));
-  const cap = koiCapY(f) - 0.002;
-  f.pos.y = lerp(D.y0, cap, smoothstep(0, 0.8, D.t / D.dur));
-  f.pos.y = Math.min(f.pos.y, cap);
-  // slow tail, sculling pectorals, breathing
-  const bl = spd / L;
-  const freq = (0.45 + 1.6 * clamp(bl, 0, 0.8)) * Math.sqrt(0.46 / L);
-  f.phase += Math.PI * 2 * freq * dt;
-  f.amp = lerp(f.amp, 0.012 + 0.06 * clamp(bl, 0, 0.7), 1 - Math.exp(-3 * dt));
-  f.flare = lerp(f.flare, 0.95, 1 - Math.exp(-2 * dt)); f.scull = lerp(f.scull, 0.8, 1 - Math.exp(-2 * dt));
-  f.scullPh += Math.PI * 2 * 1.1 * dt; f.breath += Math.PI * 2 * 0.7 * dt;
-  f.mode = 'hover'; f.thrust = 0.03; f.hRate = 0;
-  f.gulpT -= dt;
-  if (f.gulpT < 0) { f.gulpA = 1; f.gulpT = 4 + Math.random() * 5; }
-  if (f.gulpA > 0) f.gulpA = Math.max(0, f.gulpA - dt / 1.3);
-  f.mouth = lerp(f.mouth, Math.sin((1 - f.gulpA) * Math.PI) * (f.gulpA > 0 ? 0.35 : 0), 1 - Math.exp(-8 * dt));
-}
-function strokeDocked() { const D = STROKE.fish && STROKE.fish.dock; return D && D.t >= D.dur; }
-// contact frame on the koi's back at body position s; returns wrist, palm orientation and elbow in world space
-const _st = { o: new THREE.Vector3(), c: new THREE.Vector3(), t: new THREE.Vector3(), n: new THREE.Vector3(), d: new THREE.Vector3(), x: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), fq: new THREE.Quaternion(), w: new THREE.Vector3(), e: new THREE.Vector3(), sh: new THREE.Vector3(), tq: new THREE.Quaternion() };
-const _stY = new THREE.Vector3(), _stB = new THREE.Vector3(), _stQ0 = new THREE.Quaternion();
-function strokeTarget(s, lift) {
-  const f = STROKE.fish, L = f.size, g = f.girth;
-  _pe4.set(f.roll, f.heading, f.pitch, 'YZX'); _st.fq.setFromEuler(_pe4);
-  const top = (ss) => KOI_MOUTH_Y * smoothstep(0.12, 0, ss) + sampleTable(KOI_TOP, ss) * g;
-  // a wide central difference: the profile table is only C1, so a narrow one would kink the hand's orientation at every knot
-  const ds = 0.05;
-  _st.c.set(koiX(s), top(s), koiLocalLat(f, s)).multiplyScalar(L).applyQuaternion(_st.fq).add(f.pos);
-  _st.t.set(-KOI_LEN * ds, top(s + ds) - top(s - ds), koiLocalLat(f, s + ds) - koiLocalLat(f, s - ds)).normalize().applyQuaternion(_st.fq);
-  _st.n.set(0, 1, 0).applyQuaternion(_st.fq); _st.n.addScaledVector(_st.t, -_st.n.dot(_st.t)).normalize();
-  // fingers point away from the shoulder, across the back (the wrist stays in its natural range)
-  // (mostly toward the fish's middle, so the hand glides along the back instead of swinging round; the wrist deviation takes up the rest)
-  handShoulder(_st.sh);
-  _st.d.subVectors(f.pos, _st.sh).setY(0).normalize().multiplyScalar(0.7);
-  _v1.subVectors(_st.c, _st.sh).setY(0).normalize().multiplyScalar(0.3);
-  _st.d.add(_v1).addScaledVector(_st.t, 0.1);
-  _st.d.addScaledVector(_st.n, -_st.d.dot(_st.n)).normalize();
-  // the back is convex, so a hand laid in its tangent plane clears it before and behind the contact; lift the palm pads a touch
-  const beta = 0.035;
-  _st.d.applyAxisAngle(_v1.crossVectors(_st.n, _st.d).normalize(), beta);
-  const Y = _stY.copy(_st.n).applyAxisAngle(_v1, beta), back = _stB.copy(_st.d).negate();
-  _st.x.crossVectors(Y, back);
-  _st.q.setFromRotationMatrix(_st.m.makeBasis(_st.x, Y, back));
-  // the pad of the middle finger goes to the contact (with the palm the wrist can really reach); then the whole hand is seated so its lowest sphere just rests on the back
-  handShoulder(_st.sh);
-  for (let pass = 0; pass < 2; pass++) {
-    _st.w.copy(HAND.padOffset).applyQuaternion(_st.q);
-    _st.w.subVectors(_st.c, _st.w);
-    strokeElbow(_st.e, _st.w, _st.sh);
-    feasiblePalm(_st.w, _st.q, _st.e, _st.q);
-  }
-  _st.w.copy(HAND.padOffset).applyQuaternion(_st.q);
-  _st.w.subVectors(_st.c, _st.w);
-  let seat = 0;
-  const T = 0.005;
-  for (let it = 0; it < 5; it++) {
-    let m = -1, acc = 0;
-    const need = [];
-    for (const o of HAND.flatSph) {
-      _st.o.set(o[0], o[1], o[2]).applyQuaternion(_st.q).add(_st.w).addScaledVector(_st.n, seat);
-      const q = o[3] + HAND_MARGIN + 0.0012 - koiBodyDist(f, _st.o.x, _st.o.y, _st.o.z, null);
-      need.push(q); m = Math.max(m, q);
-    }
-    for (const q of need) acc += Math.exp((q - m) / T);
-    const worst = m + T * Math.log(acc);
-    seat += worst;
-    if (Math.abs(worst) < 2e-5) break;
-  }
-  _st.w.addScaledVector(_st.n, seat);
-  strokeElbow(_st.e, _st.w, _st.sh);
-  // the orientation the wrist reaches with this elbow, and the seat for exactly that orientation
-  const cq0 = _stQ0.copy(_st.q);
-  feasiblePalm(_st.w, _st.q, _st.e, _st.q);
-  {
-    _v2.copy(HAND.padOffset).applyQuaternion(cq0); _st.o.addVectors(_st.w, _v2);   // keep the pad where it was
-    _st.w.copy(HAND.padOffset).applyQuaternion(_st.q).multiplyScalar(-1).add(_st.o);
-    let s2 = 0;
-    for (let it = 0; it < 4; it++) {
-      let m = -1, acc = 0; const need = [];
-      for (const o of HAND.flatSph) {
-        _v2.set(o[0], o[1], o[2]).applyQuaternion(_st.q).add(_st.w).addScaledVector(_st.n, s2);
-        const q = o[3] + HAND_MARGIN + 0.0012 - koiBodyDist(f, _v2.x, _v2.y, _v2.z, null);
-        need.push(q); m = Math.max(m, q);
-      }
-      for (const q of need) acc += Math.exp((q - m) / T);
-      const worst = m + T * Math.log(acc);
-      s2 += worst;
-      if (Math.abs(worst) < 2e-5) break;
-    }
-    _st.w.addScaledVector(_st.n, s2);
-  }
-  // lifting between strokes raises the whole forearm, so the wrist angle does not change
-  _st.w.y += lift; _st.e.y += lift;
-  return _st;
-}
-// right shoulder: to the right of, below and a little behind the eye, whatever the head's pitch
-const _shR = new THREE.Vector3(), _shB = new THREE.Vector3();
-function handShoulder(out) {
-  _shR.set(1, 0, 0).applyQuaternion(camera.quaternion); _shR.y = 0; _shR.normalize();
-  _shB.set(0, 0, 1).applyQuaternion(camera.quaternion); _shB.y = 0; _shB.normalize();
-  return out.copy(camera.position).addScaledVector(_shR, 0.19).addScaledVector(_shB, -0.03).setY(camera.position.y - 0.25);
-}
-function setHandTargetWorld(w, q, e) {
-  _cxm.copy(camera.matrixWorld).invert();
-  HAND.tp.copy(w).applyMatrix4(_cxm);
-  HAND.te.copy(e).applyMatrix4(_cxm);
-  HAND.tq.copy(camera.quaternion).invert().multiply(q);
-}
-const STROKE_OFF = new THREE.Vector3(0.3, -0.42, -0.08), STROKE_ELB_OFF = new THREE.Vector3(0.3, -0.6, 0.12);
-// where the stroking hand rests before and after: tucked just below the eye, a little in front of the shoulder, clear of the bank
-function strokeRest(out) {
-  handShoulder(out);
-  return out.addScaledVector(_shR, 0.14).addScaledVector(_shB, -0.12).setY(camera.position.y - 0.1);
-}
-// elbow: back toward the shoulder, hanging a little below that line, never down among the bank stones
-function strokeElbow(out, w, sh) {
-  const d = _v1.subVectors(sh, w).length();
-  out.subVectors(sh, w).add(_v3.set(0, -0.16 * clamp(d / 0.45, 0.25, 1), 0)).normalize().multiplyScalar(0.27).add(w);
-  out.y = Math.max(out.y, WATER_Y + 0.26);
-  return out;
-}
-function updateStroke(dt) {
-  if (!STROKE.on) return;
-  const f = STROKE.fish;
-  STROKE.t += dt;
-  const ph = STROKE.phase;
-  if (ph === 'lean') {
-    if (!CAMX.on && (strokeDocked() || STROKE.t > 14)) {
-      if (!strokeDocked()) { f.dock.t = f.dock.dur; }
-      STROKE.phase = 'reach'; STROKE.t = 0;
-      HAND.on = true;
-      strokeTarget(0.2, 0.09);
-      strokeRest(_v2); strokeElbow(_st.e, _v2, _st.sh);
-      setHandTargetWorld(_v2, _st.q, _st.e);
-      HAND.cp.copy(HAND.tp); HAND.cv.set(0, 0, 0); HAND.ce.copy(HAND.te); HAND.cq.copy(HAND.tq); HAND.follow = 0;
-      copyPose(HAND.pose, HAND_POSES.reach);
-    }
-    return;
-  }
-  let s = 0.2, lift = 0.06;
-  if (ph === 'reach') {
-    const u = smootherstep(0, 1, STROKE.t / 1.5);
-    strokeTarget(0.2, lerp(0.09, 0.0, smootherstep(0.55, 1, STROKE.t / 1.5)));
-    strokeRest(_v2);
-    _st.w.lerpVectors(_v2, _st.w, smootherstep(0, 0.75, STROKE.t / 1.5));
-    strokeElbow(_st.e, _st.w, _st.sh);
-    setHandTargetWorld(_st.w, _st.q, _st.e);
-    HAND.tq.slerpQuaternions(HAND.cq, HAND.tq, u);
-    lerpPose(HAND.poseT, HAND_POSES.reach, HAND_POSES.flat, u);
-    if (STROKE.t >= 1.5) { STROKE.phase = 'stroke'; STROKE.t = 0; STROKE.userS = 0.2; }
-    return;
-  }
-  if (ph === 'stroke') {
-    HAND.follow = Math.min(1, (HAND.follow || 0) + dt / 0.5);
-    copyPose(HAND.poseT, HAND_POSES.flat);
-    if (STROKE.userT > 0) {
-      // the user is stroking by dragging
-      STROKE.userT -= dt;
-      s = STROKE.userS; lift = 0;
-      STROKE.roll = lerp(STROKE.roll, 0.2, 1 - Math.exp(-dt));
-    } else {
-      const cyc = 2.4, k = Math.floor(STROKE.t / cyc), u = (STROKE.t % cyc) / cyc;
-      if (k >= 3) {
-        if (STROKE.ended === 0) STROKE.ended = STROKE.t;
-        s = 0.2; lift = 0.03 * smootherstep(0, 1, (STROKE.t - STROKE.ended) / 0.5);
-        if (STROKE.t - STROKE.ended > 0.5) { STROKE.phase = 'withdraw'; STROKE.t = 0; }
-      } else {
-        STROKE.n = k;
-        if (u < 0.583) { s = lerp(0.2, 0.8, smootherstep(0, 1, u / 0.583)); lift = 0; }
-        else { const v = (u - 0.583) / 0.417; s = lerp(0.8, 0.2, smootherstep(0, 1, v)); lift = 0.035 * Math.pow(Math.sin(Math.PI * v), 2); }
-        STROKE.userS = s;
-      }
-      // the koi rolls into the hand on the second and third strokes
-      STROKE.roll = lerp(STROKE.roll, k >= 1 ? 0.22 : 0.06, 1 - Math.exp(-dt * 0.8));
-    }
-    STROKE.s = s;
-    strokeTarget(s, lift);
-    setHandTargetWorld(_st.w, _st.q, _st.e);
-    return;
-  }
-  if (ph === 'withdraw') {
-    HAND.follow = Math.max(0, (HAND.follow || 0) - dt / 0.6);
-    const u = smootherstep(0, 1, STROKE.t / 1.9);
-    strokeTarget(0.2, 0.03 + u * 0.12);
-    strokeRest(_v2);
-    _st.w.lerp(_v2, smootherstep(0.25, 1, STROKE.t / 1.9));
-    strokeElbow(_st.e, _st.w, _st.sh);
-    setHandTargetWorld(_st.w, _st.q, _st.e);
-    lerpPose(HAND.poseT, HAND_POSES.flat, HAND_POSES.reach, u);
-    STROKE.roll = lerp(STROKE.roll, 0, 1 - Math.exp(-dt * 2));
-    if (STROKE.t >= 2.2) endStroke();
-  }
-}
-function endStroke() {
-  const f = STROKE.fish;
-  if (f) { f.dock = null; f.speed = 0.02; f.mode = 'glide'; f.modeT = 1.5; }
-  const i = OBSTACLES.indexOf(STROKE.obstacle); if (i >= 0) OBSTACLES.splice(i, 1);
-  STROKE.on = false; STROKE.phase = ''; STROKE.fish = null;
-  HAND.on = false;
-  resumeWalk();
-}
-// back to walking after feeding or stroking started from the first-person view (quietly: no toast)
-function resumeWalk() {
-  if (!CAM.resumeWalk) return;
-  CAM.resumeWalk = false;
-  CAM.mode = P.camMode = 'First person';
-  if (window.GUI_REFRESH) GUI_REFRESH();
-}
-// drag along the koi to stroke it
-function setupStrokeInput() {
-  const el = renderer.domElement;
-  el.addEventListener('pointerdown', (e) => { if (!STROKE.on || STROKE.phase !== 'stroke') return; STROKE.drag = true; STROKE.lx = e.clientX; STROKE.ly = e.clientY; strokeScreenAxis(); });
-  el.addEventListener('pointermove', (e) => {
-    if (!STROKE.drag) return;
-    const dx = e.clientX - STROKE.lx, dy = e.clientY - STROKE.ly;
-    STROKE.lx = e.clientX; STROKE.ly = e.clientY;
-    const A = STROKE.axis, l2 = A.lengthSq();
-    if (l2 < 1) return;
-    STROKE.userS = clamp(STROKE.userS + ((dx * A.x + dy * A.y) / l2) * 0.6, 0.15, 0.84);
-    STROKE.userT = 2.2;
-    if (STROKE.t > 2.4 * 3 - 0.5) STROKE.t = 2.4 * 3 - 0.5;   // keep the session open while stroking
-  });
-  window.addEventListener('pointerup', () => { STROKE.drag = false; });
-}
-function strokeScreenAxis() {
-  const f = STROKE.fish;
-  if (!f) return;
-  const r = renderer.domElement.getBoundingClientRect();
-  _pe4.set(f.roll, f.heading, f.pitch, 'YZX'); _pq4.setFromEuler(_pe4);
-  const a = _v1.set(koiX(0.2) * f.size, 0, 0).applyQuaternion(_pq4).add(f.pos).project(camera);
-  const ax = (a.x * 0.5 + 0.5) * r.width, ay = (-a.y * 0.5 + 0.5) * r.height;
-  const b = _v2.set(koiX(0.8) * f.size, 0, 0).applyQuaternion(_pq4).add(f.pos).project(camera);
-  STROKE.axis.set((b.x * 0.5 + 0.5) * r.width - ax, (-b.y * 0.5 + 0.5) * r.height - ay);
-}
-
-// ---------- the hand each frame: spring in camera space, pose, placement, collision, water ----------
-const _hw = new THREE.Vector3(), _he2 = new THREE.Vector3(), _hqw = new THREE.Quaternion(), _hvw = new THREE.Vector3();
-function springStep(p, v, target, w, dt) {
-  const e = Math.exp(-w * dt);
-  for (const k of ['x', 'y', 'z']) {
-    const x0 = p[k] - target[k], v0 = v[k];
-    const tmp = (v0 + w * x0) * dt;
-    p[k] = target[k] + (x0 + tmp) * e;
-    v[k] = (v0 - w * tmp) * e;
-  }
-}
-function updateHand(dt) {
-  if (!HAND.built || HAND.hold) return;
-  const vis = HAND.on;
-  HAND.mesh.visible = vis;
-  HAND.uWet.value = HAND.wet;
-  if (!vis) { HAND.lift = 0; if (HAND.liftF) HAND.liftF.set(0, 0, 0); HAND.inWater = false; return; }
-  if (dt > 0) {
-    // reach and withdraw: critically damped spring in camera space; while in contact the hand follows its (smooth) target directly
-    const follow = HAND.follow || 0;
-    _hvw.copy(HAND.cp);
-    springStep(HAND.cp, HAND.cv, HAND.tp, HAND.omega, dt);
-    HAND.cq.slerp(HAND.tq, 1 - Math.exp(-HAND.qRate * dt));
-    HAND.ce.lerp(HAND.te, 1 - Math.exp(-8 * dt));
-    if (follow > 0) {
-      HAND.cp.lerp(HAND.tp, follow); HAND.cq.slerp(HAND.tq, follow); HAND.ce.lerp(HAND.te, follow);
-      HAND.cv.subVectors(HAND.cp, _hvw).divideScalar(dt);
-    }
-    lerpPose(HAND.pose, HAND.pose, HAND.poseT, 1 - Math.exp(-HAND.poseRate * dt));
-  }
-  applyHandPose(HAND.pose);
-  _hw.copy(HAND.cp).applyMatrix4(camera.matrixWorld);
-  _he2.copy(HAND.ce).applyMatrix4(camera.matrixWorld);
-  _hqw.copy(camera.quaternion).multiply(HAND.cq);
-  placeHand(_hw, _hqw, _he2, HAND.mode === 'stroke' ? 1 - (HAND.follow || 0) : 1);
-  resolveHandCollisions(dt);
-  pushPadsFromHand();
-  if (HAND.mode === 'feed') {
-    FEED.pinchPrev.copy(FEED.pinch);
-    handPinchPoint(FEED.pinch);
-    if (dt > 0) FEED.pinchV.subVectors(FEED.pinch, FEED.pinchPrev).divideScalar(dt);
-  }
-  handWater(dt);
-}
-// fingertips in the water: rings, wakes, drips when the hand comes out, wet skin
-const HAND_TIPS = [];
-function handWater(dt) {
-  if (!HAND_TIPS.length) HAND.sph.forEach((s, i) => { if (s[0] === HB.T2 || s[0] === HB.F(0, 2) || s[0] === HB.F(1, 2) || s[0] === HB.F(2, 2) || s[0] === HB.F(3, 2) || s[0] === HB.PALM) HAND_TIPS.push(i); });
-  const W = HAND.sphW;
-  let inW = false, any = -1;
-  for (const i of HAND_TIPS) {
-    const x = W[i * 3], y = W[i * 3 + 1], z = W[i * 3 + 2];
-    if (pondSDF(x, z) < -0.02 && y < WATER_Y + waveHeight(x, z) - 0.002) { inW = true; any = i; }
-  }
-  if (inW && !HAND.inWater && any >= 0) { addDrop(W[any * 3], W[any * 3 + 2], 0.05, -0.003); const v = AUDIO.near(_v1.set(W[any * 3], WATER_Y, W[any * 3 + 2]), 6); AUDIO.splash(0.08, v * 0.5); }
-  if (!inW && HAND.inWater) HAND.dripT = 1.6;
-  HAND.inWater = inW;
-  if (inW) {
-    HAND.wet = 1;
-    HAND.wakeT -= dt;
-    if (HAND.wakeT < 0 && dt > 0) {
-      HAND.wakeT = 0.07;
-      const sp = HAND.cv.length();
-      if (any >= 0 && sp > 0.02) addDrop(W[any * 3], W[any * 3 + 2], 0.03, -0.0015 * clamp(sp / 0.2, 0.2, 1.5));
-    }
-  } else if (dt > 0) {
-    HAND.wet = Math.max(0, HAND.wet - dt / 30);
-    if (HAND.dripT > 0) {
-      HAND.dripT -= dt;
-      if (Math.random() < dt * 9 * (HAND.dripT / 1.6)) {
-        const i = HAND_TIPS[Math.floor(Math.random() * HAND_TIPS.length)];
-        SPLASH.list.push({ x: W[i * 3], y: W[i * 3 + 1] - HAND.sph[i][4], z: W[i * 3 + 2], vx: 0, vy: -0.05, vz: 0, r: 0.0022 });
-        if (Math.random() < 0.3) AUDIO.drip();
-      }
-    }
-  }
-}
-// while a koi is being stroked the others keep out from under the hand
-function keepKoiClearOfHand() {
-  const D = STROKE.fish;
-  if (!STROKE.on || !D) return;
-  const n = clamp(Math.round(P.fishCount), 0, MAX_KOI);
-  for (let k = 0; k < n; k++) {
-    const f = FISH[k];
-    if (f === D || f.pose) continue;
-    const dx = f.pos.x - D.pos.x, dz = f.pos.z - D.pos.z, d = Math.hypot(dx, dz), R = 0.42 + f.size * 0.55 + D.size * 0.3;
-    if (d < R && d > 1e-4) { f.pos.x += (dx / d) * (R - d); f.pos.z += (dz / d) * (R - d); }
-  }
-}
 function updateInteractions(dt) {
-  keepKoiClearOfHand();
-  if (HAND.on && HAND.mode === 'feed') updateFeedHand(dt);
-  updateStroke(dt);
+  if (FEED.phase !== 'idle') updateFeedToss(dt);
   if (pelletAir) updatePellets(dt);
   if (FEED.landed || FEED.pellets.length) updateFeedFish(dt);
   else FEED.excite = lerp(FEED.excite, 0, 1 - Math.exp(-dt));
-  updateHand(dt);
 }
 // ---------- weather crossfade and precipitation ----------
 function setWeather(name, instant = false) {
@@ -8334,15 +6917,14 @@ function setupPads() {
   document.getElementById('zLbl').addEventListener('click', () => { CAM.zoomT = 1; });
   for (const id of ['stMove', 'stLook', 'zoom']) document.getElementById(id).addEventListener('contextmenu', (e) => e.preventDefault());
 }
-// hide the sticks while a hand is out or the camera is being moved for it
+// hide the sticks while the camera is being moved to a feeding place
 let _busyV = false;
 function syncTouchUI() {
-  const busy = HAND.on || STROKE.on || CAMX.on;
+  const busy = CAMX.on;
   if (busy !== _busyV) { _busyV = busy; document.body.classList.toggle('busy', busy); if (busy) { STICK.move.x = STICK.move.y = STICK.look.x = STICK.look.y = 0; STICK.zoomDir = 0; } }
 }
 function setupUI() {
   buildGUI();
-  setupStrokeInput();
   setupPads();
   // automated screenshots show only the scene unless ?ui is given
   if (TEST && !QS.has('ui')) { UI.clean = true; document.body.classList.add('clean', 'test'); }
@@ -8353,7 +6935,6 @@ function setupUI() {
   on('bClean', () => setClean(!UI.clean));
   on('bWeather', cycleWeather);
   on('bSound', () => AUDIO.setMuted(!AUDIO.muted));
-  on('bStroke', () => startStroke());
   on('bFeed', () => startFeed());
   on('gClose', () => setGuide(false));
   on('gOpen', () => setGuide(true));
@@ -8373,7 +6954,6 @@ function setupUI() {
     else if (k === 'KeyV') setClean(!UI.clean);
     else if (k === 'Escape') { if (UI.clean) setClean(false); }
     else if (k === 'KeyE') startFeed();
-    else if (k === 'KeyG') startStroke();
     else if (k === 'KeyK') followNext();
     else if (k === 'KeyT') cycleWeather();
     else if (k === 'KeyM') AUDIO.setMuted(!AUDIO.muted);
@@ -8640,10 +7220,6 @@ const KOI = {
   },
   setKoiN(n) { G.uKoiN.value = n; },
   feed: () => startFeed(),
-  // freeze the hand where it is and look at it from another viewpoint (inspection only)
-  handInspect(p, t) { HAND.hold = true; CAM.mode = 'Manual'; P.camMode = 'Manual'; lookAt(p[0], p[1], p[2], t[0], t[1], t[2]); },
-  handPoint(bone = HB.PALM, x = 0, y = 0, z = -0.05) { return new THREE.Vector3(x, y, z).applyMatrix4(HAND.bones[bone].matrixWorld).toArray(); },
-  stroke: () => startStroke(),
   // one simulation step of everything but rendering (for measurements on software GL)
   simStep(dt = 1 / 60) {
     clock.dt = dt; clock.realDt = dt;
@@ -8655,41 +7231,16 @@ const KOI = {
     updateInteractions(dt);
     SIM.drops.length = 0;
   },
-  // hand checks over a whole feed or stroke: penetration (collision spheres and the skinned mesh), camera-space acceleration, NaN
-  handMetrics(kind = 'feed', seconds = 16, dt = 1 / 60, meshEvery = 3) {
-    const m = { kind, steps: 0, handSteps: 0, penSphMM: 0, penMeshMM: 0, penMeshWhat: '', peakAccPalm: 0, peakAccTip: 0, peakAt: 0, maxLiftMM: 0, nan: 0, eaten: 0, released: 0, strokes: 0, fish: '' };
-    if (kind === 'feed') startFeed(); else startStroke();
-    if (kind === 'stroke') m.fish = STROKE.fish ? STROKE.fish.variety + ' ' + STROKE.fish.size.toFixed(2) : 'none';
-    const inv = new THREE.Matrix4(), hp = [], ht = [], v = new THREE.Vector3();
-    const n = Math.round(seconds / dt);
-    for (let i = 0; i < n; i++) {
+  // a whole feed without rendering: pellets tossed and eaten, NaN in any fish state
+  feedMetrics(seconds = 14, dt = 1 / 60) {
+    const m = { steps: 0, released: 0, eaten: 0, nan: 0 };
+    startFeed();
+    for (let i = 0; i < Math.round(seconds / dt); i++) {
       this.simStep(dt);
       m.steps++;
       for (const f of FISH) if (!Number.isFinite(f.pos.x + f.pos.y + f.pos.z + f.heading + f.roll + f.pitch)) m.nan++;
-      if (!HAND.on) { hp.length = 0; ht.length = 0; continue; }
-      m.handSteps++;
-      HAND.bones[HB.ARM].updateMatrixWorld(true);
-      const W = handSphereCentres();
-      for (let s = 0; s < HAND.sph.length; s++) {
-        const need = sphereLift(W[s * 3], W[s * 3 + 1], W[s * 3 + 2], HAND.sph[s][4] - HAND_MARGIN);
-        if (need > 0) m.penSphMM = Math.max(m.penSphMM, need * 1000);
-        if (!Number.isFinite(W[s * 3] + W[s * 3 + 1] + W[s * 3 + 2])) m.nan++;
-      }
-      if (i % meshEvery === 0) { const r = handMeshPenetration(); if (r.d * 1000 > m.penMeshMM) { m.penMeshMM = r.d * 1000; m.penMeshWhat = r.what; } }
-      m.maxLiftMM = Math.max(m.maxLiftMM, HAND.liftNeed * 1000);
-      inv.copy(camera.matrixWorld).invert();
-      hp.push(v.set(0, -0.004, -0.045).applyMatrix4(HAND.bones[HB.PALM].matrixWorld).applyMatrix4(inv).clone());
-      ht.push(v.set(0, 0, -HAND_FING[0].len[2]).applyMatrix4(HAND.bones[HB.F(0, 2)].matrixWorld).applyMatrix4(inv).clone());
-      if (hp.length > 3) { hp.shift(); ht.shift(); }
-      if (hp.length === 3) {
-        const a = hp[2].clone().addScaledVector(hp[1], -2).add(hp[0]).length() / (dt * dt);
-        const b = ht[2].clone().addScaledVector(ht[1], -2).add(ht[0]).length() / (dt * dt);
-        if (a > m.peakAccPalm) { m.peakAccPalm = a; m.peakAt = +(i * dt).toFixed(2); }
-        m.peakAccTip = Math.max(m.peakAccTip, b);
-      }
     }
-    m.eaten = FEED.eaten; m.released = FEED.released; m.strokes = STROKE.n + 1;
-    for (const k of ['penSphMM', 'penMeshMM', 'peakAccPalm', 'peakAccTip', 'maxLiftMM']) m[k] = +m[k].toFixed(3);
+    m.released = FEED.released; m.eaten = FEED.eaten;
     return m;
   },
   info() { return { calls: frameInfo.calls, tris: frameInfo.tris, programs: renderer.info.programs.length, textures: renderer.info.memory.textures, geometries: renderer.info.memory.geometries }; },
@@ -8713,7 +7264,7 @@ async function init() {
     ['Post-processing', buildPost],
     ['Water', () => { buildWaterSim(); buildWater(); allocTargets(); }],
     ['Koi', buildKoi],
-    ['Hands', () => { buildHand(); buildPellets(); }],
+    ['Feeding', buildPellets],
   ];
   for (let i = 0; i < steps.length; i++) {
     setLoader(i / steps.length, steps[i][0] + '…');
@@ -8736,11 +7287,10 @@ async function init() {
   await nextFrame();
   if (TEST && window.__reseed) window.__reseed();   // test runs: the simulation starts from the same random state whatever was built before
   step(1 / 60);
-  // compile the hand and pellet programs now so the first feed does not stutter
-  HAND.mesh.visible = true; HAND.bones[HB.ARM].position.set(0, -60, 0); HAND.bones[HB.ARM].updateMatrixWorld(true);
+  // compile the pellet programs now so the first feed does not stutter
   pelletAir.count = pelletFloat.count = 1;
   renderer.compile(scene, camera);
-  HAND.mesh.visible = false; pelletAir.count = pelletFloat.count = 0;
+  pelletAir.count = pelletFloat.count = 0;
   document.getElementById('loader').classList.add('done');
   if (TEST) document.getElementById('loader').style.display = 'none';
   KOI.ready = true;
