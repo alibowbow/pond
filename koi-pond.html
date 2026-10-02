@@ -6382,12 +6382,12 @@ window.AUDIO = AUDIO;
 const HB = { ARM: 0, PALM: 1, T0: 2, T1: 3, T2: 4, F: (f, k) => 5 + f * 3 + k, N: 17 };
 const HAND_FING = [
   // MCP joint, bind spread (rad, + toward the thumb), phalanx lengths, radii (base, PIP, DIP, tip), knuckle radii (MCP, PIP, DIP)
-  { mcp: [-0.0283, -0.0006, -0.0812], spread: 0.075, len: [0.0405, 0.0245, 0.0205], r: [0.0096, 0.0087, 0.0079, 0.0068], jr: [0.0104, 0.0089, 0.0080] },
-  { mcp: [-0.0090, 0.0004, -0.0852], spread: 0.005, len: [0.0452, 0.0282, 0.0215], r: [0.0099, 0.0090, 0.0081, 0.0069], jr: [0.0107, 0.0092, 0.0082] },
-  { mcp: [0.0104, -0.0002, -0.0815], spread: -0.07, len: [0.0418, 0.0268, 0.0210], r: [0.0094, 0.0085, 0.0077, 0.0066], jr: [0.0101, 0.0087, 0.0078] },
-  { mcp: [0.0272, -0.0022, -0.0738], spread: -0.16, len: [0.0335, 0.0198, 0.0187], r: [0.0084, 0.0076, 0.0069, 0.0059], jr: [0.0091, 0.0078, 0.0070] },
+  { mcp: [-0.0290, -0.0006, -0.0960], spread: 0.075, len: [0.0345, 0.0210, 0.0175], r: [0.0096, 0.0087, 0.0079, 0.0068], jr: [0.0104, 0.0089, 0.0080] },
+  { mcp: [-0.0092, 0.0004, -0.1000], spread: 0.005, len: [0.0385, 0.0240, 0.0185], r: [0.0099, 0.0090, 0.0081, 0.0069], jr: [0.0107, 0.0092, 0.0082] },
+  { mcp: [0.0106, -0.0002, -0.0955], spread: -0.07, len: [0.0356, 0.0228, 0.0180], r: [0.0094, 0.0085, 0.0077, 0.0066], jr: [0.0101, 0.0087, 0.0078] },
+  { mcp: [0.0280, -0.0022, -0.0870], spread: -0.16, len: [0.0280, 0.0170, 0.0160], r: [0.0084, 0.0076, 0.0069, 0.0059], jr: [0.0091, 0.0078, 0.0070] },
 ];
-const HAND_THUMB = { cmc: [-0.0172, -0.0118, -0.0128], rot: [-0.13, 0.6, 1.0], len: [0.044, 0.0315, 0.0268], r: [0.0118, 0.0112, 0.0102, 0.0087], jr: [0.0122, 0.0117, 0.0107],
+const HAND_THUMB = { cmc: [-0.0176, -0.0122, -0.0150], rot: [-0.13, 0.6, 1.0], len: [0.044, 0.0315, 0.0268], r: [0.0118, 0.0112, 0.0102, 0.0087], jr: [0.0122, 0.0117, 0.0107],
   rot1: [-0.05, 0.1, 0.0], rot2: [-0.1, 0.0, 0.0] };
 const sgnS = (x) => (x >= 0 ? smoothstep(0, 1, x) : -smoothstep(0, 1, -x));
 function sdRoundCone(px, py, pz, ax, ay, az, bx, by, bz, r1, r2) {
@@ -6431,7 +6431,7 @@ function handPrimitives(bones) {
   const I = new THREE.Matrix4();
   const add = (o) => { o.inv = new THREE.Matrix4().copy(bones[o.bone].matrixWorld).invert(); P.push(o); return o; };
   // --- palm (palm bone = hand frame at bind) ---
-  add({ kind: 'ell', bone: HB.PALM, c: [-0.002, -0.0038, -0.047], r: [0.0352, 0.0121, 0.0405], k: 0.012, part: 1, thin: 0.3 });
+  add({ kind: 'ell', bone: HB.PALM, c: [-0.002, -0.0040, -0.054], r: [0.0362, 0.0135, 0.0475], k: 0.012, part: 1, thin: 0.3 });
   HAND_FING.forEach((F, f) => {
     const m = F.mcp;
     add({ kind: 'cone', bone: HB.PALM, a: [m[0] * 0.55, 0.0012, -0.014], b: [m[0], m[1] + 0.0006, m[2] + 0.003], ra: 0.0074, rb: 0.0084, k: 0.011, part: 1, thin: 0.35, child: HB.F(f, 0), blend: 0.009 });
@@ -6440,11 +6440,11 @@ function handPrimitives(bones) {
     const m = F.mcp;
     add({ kind: 'sph', bone: HB.PALM, c: [m[0], m[1] + 0.0012, m[2] + 0.001], r: F.jr[0], k: 0.006, part: 3 + f, thin: 0.5, knuckle: HB.F(f, 0), along: 0 });
   });
-  add({ kind: 'ell', bone: HB.PALM, c: [-0.0212, -0.0109, -0.0305], r: [0.0165, 0.0124, 0.0268], yaw: 0.38, k: 0.011, part: 1, thin: 0.4, share: HB.T0, shareW: 0.35 });
-  add({ kind: 'ell', bone: HB.PALM, c: [0.0213, -0.0088, -0.0432], r: [0.0121, 0.0104, 0.0322], k: 0.01, part: 1, thin: 0.45 });
-  add({ kind: 'cone', bone: HB.PALM, a: [-0.0248, -0.0094, -0.0738], b: [0.0243, -0.0099, -0.0698], ra: 0.0091, rb: 0.0084, k: 0.009, part: 1, thin: 0.5 });
+  add({ kind: 'ell', bone: HB.PALM, c: [-0.0222, -0.0125, -0.0345], r: [0.0172, 0.0148, 0.0300], yaw: 0.38, k: 0.011, part: 1, thin: 0.4, share: HB.T0, shareW: 0.35 });
+  add({ kind: 'ell', bone: HB.PALM, c: [0.0222, -0.0100, -0.0500], r: [0.0125, 0.0120, 0.0370], k: 0.01, part: 1, thin: 0.45 });
+  add({ kind: 'cone', bone: HB.PALM, a: [-0.0255, -0.0098, -0.0872], b: [0.0250, -0.0102, -0.0828], ra: 0.0091, rb: 0.0084, k: 0.009, part: 1, thin: 0.5 });
   // --- wrist and forearm (arm bone), slightly flattened ---
-  add({ kind: 'cone', bone: HB.ARM, a: [0, -0.0022, -0.006], b: [0, -0.0022, 0.105], ra: 0.0288, rb: 0.0338, sy: 1.62, k: 0.012, part: 0, thin: 0.15, wrist: true });
+  add({ kind: 'cone', bone: HB.ARM, a: [0, -0.0022, -0.006], b: [0, -0.0022, 0.105], ra: 0.0288, rb: 0.0338, sy: 1.45, k: 0.012, part: 0, thin: 0.15, wrist: true });
   add({ kind: 'sph', bone: HB.ARM, c: [0.0232, 0.0042, 0.021], r: 0.0056, k: 0.008, part: 0, thin: 0.15, wrist: true });
   // --- thumb ---
   const T = HAND_THUMB;
@@ -6743,11 +6743,11 @@ vec3 hPerturb(vec3 pos, vec3 n, float h) {
 }
 // dorsal venous network of the hand and wrist (hand frame x, z in metres)
 const vec4 HVEIN[17] = vec4[17](
-  vec4(-0.019, -0.070, -0.017, -0.050), vec4(-0.017, -0.050, -0.013, -0.030), vec4(-0.013, -0.030, -0.015, -0.012), vec4(-0.015, -0.012, -0.019, 0.010), vec4(-0.019, 0.010, -0.023, 0.045),
-  vec4(0.001, -0.072, 0.003, -0.052), vec4(0.003, -0.052, 0.001, -0.036),
-  vec4(0.019, -0.068, 0.020, -0.048), vec4(0.020, -0.048, 0.016, -0.030), vec4(0.016, -0.030, 0.012, -0.010), vec4(0.012, -0.010, 0.013, 0.015), vec4(0.013, 0.015, 0.018, 0.045),
-  vec4(-0.016, -0.043, -0.006, -0.037), vec4(-0.006, -0.037, 0.004, -0.035), vec4(0.004, -0.035, 0.013, -0.038),
-  vec4(-0.031, -0.036, -0.026, -0.020), vec4(-0.026, -0.020, -0.021, -0.004));
+  vec4(-0.019, -0.082, -0.017, -0.059), vec4(-0.017, -0.059, -0.013, -0.035), vec4(-0.013, -0.035, -0.015, -0.014), vec4(-0.015, -0.014, -0.019, 0.010), vec4(-0.019, 0.010, -0.023, 0.045),
+  vec4(0.001, -0.085, 0.003, -0.061), vec4(0.003, -0.061, 0.001, -0.042),
+  vec4(0.019, -0.080, 0.020, -0.056), vec4(0.020, -0.056, 0.016, -0.035), vec4(0.016, -0.035, 0.012, -0.012), vec4(0.012, -0.012, 0.013, 0.015), vec4(0.013, 0.015, 0.018, 0.045),
+  vec4(-0.016, -0.050, -0.006, -0.043), vec4(-0.006, -0.043, 0.004, -0.041), vec4(0.004, -0.041, 0.013, -0.045),
+  vec4(-0.031, -0.042, -0.026, -0.023), vec4(-0.026, -0.023, -0.021, -0.005));
 `;
 const GLSL_HAND_ALBEDO = /* glsl */`
 {
@@ -6755,7 +6755,7 @@ const GLSL_HAND_ALBEDO = /* glsl */`
   vec3 P = vRest * 1000.0;
   float digit = step(1.5, part);
   float dorsM = smoothstep(-0.15, 0.45, dors), palmM = smoothstep(0.0, -0.5, dors);
-  vec3 col = mix(vec3(0.64, 0.42, 0.33), vec3(0.56, 0.36, 0.27), dorsM);
+  vec3 col = mix(vec3(0.62, 0.44, 0.36), vec3(0.54, 0.38, 0.30), dorsM);
   float m1 = hNoise(P * 0.09), m2 = hNoise(P * 0.33 + 7.1), m3 = hNoise(P * 1.3 + 3.3);
   col *= 0.93 + 0.12 * m1;
   col = mix(col, col * vec3(1.1, 0.88, 0.86), 0.3 * smoothstep(0.6, 0.85, m2));
@@ -6782,9 +6782,9 @@ const GLSL_HAND_ALBEDO = /* glsl */`
     cr += pc * palmM * 0.8;
   } else if (part > 0.5) {
     vec2 q = vRest.xz;
-    float heart = abs(q.y - (-0.0685 - 0.0105 * pow(clamp((0.036 - q.x) / 0.05, 0.0, 1.2), 2.0))) + step(q.x, -0.016);
-    float head = abs(q.y - (-0.061 + 0.33 * (q.x + 0.03))) + step(0.022, q.x) + step(q.x, -0.031);
-    vec2 lq = (q - vec2(-0.02, -0.03)) / vec2(0.019, 0.036);
+    float heart = abs(q.y - (-0.0805 - 0.0105 * pow(clamp((0.036 - q.x) / 0.05, 0.0, 1.2), 2.0))) + step(q.x, -0.016);
+    float head = abs(q.y - (-0.0716 + 0.33 * (q.x + 0.03))) + step(0.022, q.x) + step(q.x, -0.031);
+    vec2 lq = (q - vec2(-0.0215, -0.035)) / vec2(0.020, 0.042);
     float life = abs(length(lq) - 1.0) * 0.02 + step(lq.x, 0.1) + step(0.3, lq.y);
     cr += smoothstep(0.0011, 0.0003, min(min(heart, head), life)) * palmM * 1.2;
   }
@@ -6836,9 +6836,9 @@ const GLSL_HAND_LIGHT = /* glsl */`
   // soft subsurface wrap past the terminator, and a red glow through thin fingers against the light
   float ndl = dot(geometryNormal, directLight.direction);
   float wrapT = max((ndl + 0.5) / 1.5, 0.0) - max(ndl, 0.0);
-  reflectedLight.directDiffuse += directLight.color * max(wrapT, 0.0) * material.diffuseColor * vec3(1.0, 0.4, 0.26) * 0.7;
+  reflectedLight.directDiffuse += directLight.color * max(wrapT, 0.0) * material.diffuseColor * vec3(1.0, 0.45, 0.3) * 0.5;
   float back = pow(clamp(dot(geometryViewDir, -directLight.direction), 0.0, 1.0), 3.0) * vHand.w;
-  reflectedLight.directDiffuse += directLight.color * back * material.diffuseColor * vec3(1.0, 0.25, 0.12) * 0.35;
+  reflectedLight.directDiffuse += directLight.color * back * material.diffuseColor * vec3(1.0, 0.25, 0.12) * 0.28;
 }
 `;
 // sleeve: indigo cotton twill with faded fold ridges
@@ -6900,7 +6900,8 @@ function handPose(o = {}) {
 const HAND_POSES = {
   relaxed: handPose(),
   reach: handPose({ spread: [0.04, 0, -0.04, -0.09], mcp: [0.12, 0.16, 0.22, 0.3], pip: [0.2, 0.24, 0.3, 0.36], dip: [0.1, 0.12, 0.14, 0.18], tFlex: 0.0, tAbd: 0.18, tMcp: 0.08, tIp: 0.12 }),
-  pinch: handPose({ spread: [-0.02, 0.0, -0.02, -0.04], mcp: [0.71, 0.74, 0.95, 1.08], pip: [0.69, 1.16, 1.2, 1.25], dip: [0.7, 0.7, 0.6, 0.6], tFlex: 0.27, tAbd: 0.06, tTwist: -0.01, tMcp: 0.37, tIp: 0.18 }),
+  // thumb pad on the index pad with room for a few pellets, the middle finger folded just behind, ring and little curled loosely
+  pinch: handPose({ spread: [-0.02, 0.0, -0.02, -0.04], mcp: [0.85, 0.91, 0.9, 1.0], pip: [0.67, 1.25, 1.1, 1.15], dip: [0.5, 0.45, 0.55, 0.6], tFlex: 0.25, tAbd: 0.0, tTwist: 0.02, tMcp: 0.39, tIp: 0.07 }),
   flat: handPose({ spread: [-0.03, 0, 0.025, 0.06], mcp: [0.1, 0.08, 0.1, 0.13], pip: [0.2, 0.18, 0.21, 0.24], dip: [0.12, 0.11, 0.12, 0.14], tFlex: 0.1, tAbd: -0.5, tMcp: 0.06, tIp: 0.08 }),
 };
 function copyPose(o, a) { for (let i = 0; i < 4; i++) { o.spread[i] = a.spread[i]; o.mcp[i] = a.mcp[i]; o.pip[i] = a.pip[i]; o.dip[i] = a.dip[i]; } o.tFlex = a.tFlex; o.tAbd = a.tAbd; o.tTwist = a.tTwist; o.tMcp = a.tMcp; o.tIp = a.tIp; return o; }
@@ -6964,10 +6965,12 @@ function placeHand(wristW, palmQ, elbowW, limit = 1) {
   arm.quaternion.copy(_haq);
 }
 
+// sleeve radius along the forearm (before the 1.1 x 0.8 flattening): 3.75 cm at the cuff, widening toward the elbow
+const sleeveR = (z) => 0.0375 + 0.0175 * smoothstep(0.045, 0.42, z);
 function buildSleeveGeometry() {
   const NU = 72, prof = [];
   // profile: inner surface (back to front), rolled lip at the cuff, outer surface (front to back)
-  const z0 = 0.056, z1 = 0.3, th = 0.0026, NZ = 30;
+  const z0 = 0.045, z1 = 0.3, th = 0.0026, NZ = 30;
   for (let j = NZ; j >= 0; j--) prof.push([-th, z0 + (z1 - z0) * Math.pow(j / NZ, 1.35), 0]);
   for (let k = 1; k < 6; k++) { const a = Math.PI * (k / 6); prof.push([-th / 2 - Math.cos(a) * th / 2, z0 - Math.sin(a) * th * 0.7, 1]); }
   for (let j = 0; j <= NZ; j++) prof.push([0, z0 + (z1 - z0) * Math.pow(j / NZ, 1.35), 2]);
@@ -6975,12 +6978,12 @@ function buildSleeveGeometry() {
   const NV = prof.length;
   for (let j = 0; j < NV; j++) {
     const [off, z] = prof[j];
-    const r0 = 0.043 + 0.014 * smoothstep(0.06, 0.42, z) + (z < z0 + 0.018 ? 0.0012 * smoothstep(z0 + 0.018, z0, z) : 0);
+    const r0 = sleeveR(z) + (z < z0 + 0.018 ? 0.0012 * smoothstep(z0 + 0.018, z0, z) : 0);
     for (let i = 0; i <= NU; i++) {
       const a = (i / NU) * Math.PI * 2;
       const f = 0.55 * Math.sin(3 * a + z * 42 + 0.6 * Math.sin(z * 20)) * Math.exp(-sq((z - 0.11) / 0.07)) + 0.35 * Math.sin(5 * a - z * 60 + 1.7) * smoothstep(0.1, 0.3, z) + 0.3 * Math.sin(2 * a + z * 25);
       const r = r0 * (1 + 0.045 * f) + off;
-      pos.push(Math.cos(a) * r * 1.07, Math.sin(a) * r * 0.93 + 0.002, z);
+      pos.push(Math.cos(a) * r * 1.1, Math.sin(a) * r * 0.8 + 0.002, z);
       fold.push(smoothstep(0.35, 1.0, f));
     }
   }
@@ -7037,11 +7040,13 @@ function buildHand() {
   HAND.padOffset.set(0, -Fm.r[3] * 0.95, -Fm.len[2] * 0.55).applyMatrix4(bones[HB.F(1, 2)].matrixWorld);
   // collision spheres in bone space: [bone, x, y, z, r]
   const S = [];
-  S.push([HB.PALM, -0.019, -0.004, -0.028, 0.0128], [HB.PALM, 0.0, -0.004, -0.034, 0.0128], [HB.PALM, 0.02, -0.003, -0.04, 0.0122],
-    [HB.PALM, -0.02, -0.003, -0.066, 0.012], [HB.PALM, -0.001, -0.003, -0.07, 0.012], [HB.PALM, 0.019, -0.004, -0.064, 0.0115],
-    [HB.PALM, -0.025, -0.009, -0.03, 0.0125], [HB.PALM, 0.0, 0.002, -0.08, 0.0115], [HB.PALM, 0.021, 0.0, -0.075, 0.0105], [HB.PALM, -0.022, 0.0, -0.079, 0.011]);
+  S.push([HB.PALM, -0.019, -0.004, -0.033, 0.0134], [HB.PALM, 0.0, -0.004, -0.040, 0.0134], [HB.PALM, 0.02, -0.003, -0.047, 0.0126],
+    [HB.PALM, -0.02, -0.003, -0.0775, 0.0124], [HB.PALM, -0.001, -0.003, -0.082, 0.0124], [HB.PALM, 0.019, -0.004, -0.075, 0.0118],
+    [HB.PALM, -0.025, -0.0105, -0.035, 0.0132]);
+  // the knuckles: the skin between them is thin, so a sphere there would reach outside it
+  HAND_FING.forEach((F) => S.push([HB.PALM, F.mcp[0], F.mcp[1] + 0.0012, F.mcp[2] + 0.001, F.jr[0] - 0.0004]));
   S.push([HB.ARM, 0, -0.002, 0.012, 0.021], [HB.ARM, 0, -0.001, 0.045, 0.025]);
-  for (let z = 0.06; z <= 0.301; z += 0.035) S.push([HB.ARM, 0, 0.002, Math.min(z, 0.285), (0.043 + 0.014 * smoothstep(0.06, 0.42, z)) * 1.12 + 0.003]);
+  for (let z = 0.05; z <= 0.301; z += 0.035) S.push([HB.ARM, 0, 0.002, Math.min(z, 0.285), sleeveR(z) * 1.1 + 0.003]);
   HAND_FING.forEach((F, f) => {
     const [l0, l1, l2] = F.len, r = F.r;
     S.push([HB.F(f, 0), 0, 0, -l0 * 0.3, r[0] + 0.0006], [HB.F(f, 0), 0, 0, -l0 * 0.7, (r[0] + r[1]) / 2 + 0.0006], [HB.F(f, 1), 0, 0, 0, F.jr[1] + 0.0006],
