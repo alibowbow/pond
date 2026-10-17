@@ -10,7 +10,7 @@ const { page } = s;
 await s.eval(() => { KOI.view([0.6, 2.4, 10.5], [0, -0.3, 0]); KOI.frames(2); });
 await s.shot(path.join(out, 'ui-desktop.png'));
 // open the Rendering and Camera folders to see sliders, toggles and selects
-await page.evaluate(() => { for (const li of document.querySelectorAll('.koi-gui li.title')) if (/Rendering|Lens/.test(li.textContent)) li.click(); });
+await page.evaluate(() => { for (const li of document.querySelectorAll('.koi-gui li.title')) if (/렌더링|렌즈/.test(li.textContent)) li.click(); });
 await page.waitForTimeout(400);
 await s.shot(path.join(out, 'ui-panel.png'), { x: 900, y: 0, width: 380, height: 720 });
 // shortcuts

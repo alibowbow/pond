@@ -57,6 +57,8 @@ export async function open({ width = 1280, height = 720, dpr = 1, query = '', he
     r.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(libs.three) }));
   await page.route('**/cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js', (r) =>
     r.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(libs.dat) }));
+  // the page's Korean web fonts: tests use locally installed copies (if any), so the stylesheet is served empty
+  await page.route('**/fonts.googleapis.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
   const url = 'file://' + (file ? path.resolve(file) : path.join(ROOT, 'koi-pond.html')) + '?test' + (query ? '&' + query : '');
   const t0 = Date.now();
   await page.goto(url);
